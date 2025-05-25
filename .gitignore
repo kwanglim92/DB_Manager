@@ -1,19 +1,21 @@
 # Python cache
 __pycache__/
-*.py[cod]
 *.pyc
 
-# PyInstaller
+# PyInstaller / Build output
 *.spec
 build/
 dist/
 
+# Local Data (필요에 따라 주석 처리 또는 제거)
+data/
+# 또는 data/local_db.sqlite
+
 # Backups & Temp
 *.bak
 *.tmp
-temp_*.py
-backup*.txt
+*.log
 
-# IDE / Editor specific
+# IDE / Editor specific (자주 사용되는 것들 추가)
 .vscode/
 .idea/
