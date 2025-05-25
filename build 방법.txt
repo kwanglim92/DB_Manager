@@ -1,1 +1,0 @@
-python -m PyInstaller --onefile --windowed --icon=src/resources/icons/db_manager.ico --add-data="data;data" src/DB_Manager.py
