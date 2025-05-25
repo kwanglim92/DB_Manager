@@ -1,0 +1,19 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyc
+
+# PyInstaller
+*.spec
+build/
+dist/
+
+# Backups & Temp
+*.bak
+*.tmp
+temp_*.py
+backup*.txt
+
+# IDE / Editor specific
+.vscode/
+.idea/
