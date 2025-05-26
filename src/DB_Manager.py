@@ -20,6 +20,7 @@ from openpyxl.chart import BarChart, Reference
 # 로컬 모듈
 from db_schema import DBSchema
 from default_db_helpers import add_default_db_functions_to_class
+from change_history_helpers import add_change_history_functions_to_class
 
 class DBManager:
     def __init__(self):
@@ -53,6 +54,9 @@ class DBManager:
         
         # Default DB 관리 기능 추가 (클래스에 메서드 추가)
         add_default_db_functions_to_class(DBManager)
+        
+        # 변경 이력 관리 기능 추가
+        add_change_history_functions_to_class(DBManager)
         
         # 메뉴바 생성
         self.create_menu()
@@ -190,6 +194,9 @@ class DBManager:
         
         # Default DB 관리 탭 추가
         self.create_default_db_tab()
+        
+        # 변경 이력 관리 탭 추가
+        self.create_change_history_tab()
         
         # 로그에 기록
         self.update_log("Maintenance Mode가 활성화되었습니다.")
