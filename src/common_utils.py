@@ -2,11 +2,15 @@
 공통 유틸리티 함수 모듈
 
 이 모듈은 DB_Manager 애플리케이션에서 공통으로 사용되는 유틸리티 함수를 제공합니다.
-UI 요소 생성, 데이터 처리 등 여러 곳에서 재사용 가능한 함수들을 정의합니다.
+UI 요소 생성, 데이터 처리, 설정 관리 등 여러 곳에서 재사용 가능한 함수들을 정의합니다.
 """
 
+import os
+import json
+import hashlib
 import tkinter as tk
 from tkinter import ttk
+from tkinter import messagebox
 
 def create_treeview_with_scrollbar(parent, columns, headings, column_widths=None, height=20, style=None, show="headings"):
     """
@@ -91,3 +95,106 @@ def format_num_value(value):
         return value
     except:
         return value
+
+def get_config_path():
+    """
+    설정 파일 경로를 반환합니다.
+    
+    Returns:
+        str: 설정 파일 경로
+    """
+    # 애플리케이션 루트 디렉토리 찾기
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config_dir = os.path.join(base_dir, 'config')
+    
+    # 설정 디렉토리가 없으면 생성
+    if not os.path.exists(config_dir):
+        os.makedirs(config_dir)
+    
+    return os.path.join(config_dir, 'settings.json')
+
+def load_settings():
+    """
+    설정 파일에서 설정을 로드합니다.
+    
+    Returns:
+        dict: 설정 정보
+    """
+    config_path = get_config_path()
+    default_settings = {
+        'maint_password_hash': hashlib.sha256('1234'.encode()).hexdigest(),  # 기본 비밀번호 '1234'의 해시
+        'page_size': 100,  # 변경 이력 페이지 크기
+        'auto_backup': True,  # 자동 백업 여부
+        'backup_interval_days': 7  # 백업 주기 (일)
+    }
+    
+    if not os.path.exists(config_path):
+        # 설정 파일이 없으면 기본 설정으로 생성
+        save_settings(default_settings)
+        return default_settings
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            settings = json.load(f)
+        return settings
+    except Exception as e:
+        print(f'설정 로드 오류: {str(e)}')
+        return default_settings
+
+def save_settings(settings):
+    """
+    설정을 파일에 저장합니다.
+    
+    Args:
+        settings (dict): 저장할 설정 정보
+    
+    Returns:
+        bool: 저장 성공 여부
+    """
+    config_path = get_config_path()
+    try:
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, ensure_ascii=False, indent=4)
+        return True
+    except Exception as e:
+        print(f'설정 저장 오류: {str(e)}')
+        return False
+
+def verify_password(input_password, hashed_password=None):
+    """
+    입력된 비밀번호가 저장된 해시와 일치하는지 확인합니다.
+    
+    Args:
+        input_password (str): 확인할 비밀번호
+        hashed_password (str, optional): 비교할 해시 값. 없으면 설정에서 로드
+    
+    Returns:
+        bool: 비밀번호 일치 여부
+    """
+    if hashed_password is None:
+        settings = load_settings()
+        hashed_password = settings.get('maint_password_hash')
+    
+    input_hash = hashlib.sha256(input_password.encode()).hexdigest()
+    return input_hash == hashed_password
+
+def change_maintenance_password(old_password, new_password):
+    """
+    유지보수 모드 비밀번호를 변경합니다.
+    
+    Args:
+        old_password (str): 현재 비밀번호
+        new_password (str): 새 비밀번호
+    
+    Returns:
+        bool: 비밀번호 변경 성공 여부
+    """
+    settings = load_settings()
+    
+    # 현재 비밀번호 확인
+    if not verify_password(old_password, settings.get('maint_password_hash')):
+        return False
+    
+    # 새 비밀번호 해시 생성 및 저장
+    settings['maint_password_hash'] = hashlib.sha256(new_password.encode()).hexdigest()
+    return save_settings(settings)

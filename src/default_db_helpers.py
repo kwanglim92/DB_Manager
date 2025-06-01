@@ -285,7 +285,8 @@ def add_default_db_functions_to_class(cls):
             self.all_params_tree.move(item, "", i)
             
     def filter_parameters(self, event=None):
-        """검색어에 따라 파라미터 목록을 필터링합니다."""
+        """검색어에 따라 파라미터 목록을 필터링합니다. 개선된 검색 알고리즘 적용."""
+        from LoadingDialog import LoadingDialog
         search_text = self.search_var.get().lower()
         
         # 검색어가 없으면 모든 항목 표시
@@ -293,44 +294,108 @@ def add_default_db_functions_to_class(cls):
             self.load_all_parameters()
             return
         
-        # 기존 항목 삭제
-        for item in self.all_params_tree.get_children():
-            self.all_params_tree.delete(item)
+        # 로딩 다이얼로그 표시 (대용량 데이터 처리시 성능 향상)
+        loading_dialog = LoadingDialog(self.window)
+        loading_dialog.update_progress(0, "파라미터 검색 중...")
         
         try:
+            # 기존 항목 삭제
+            for item in self.all_params_tree.get_children():
+                self.all_params_tree.delete(item)
+            
             # 모든 장비 유형 가져오기
             equipment_types = self.db_schema.get_equipment_types()
+            loading_dialog.update_progress(10, "장비 유형 로드 완료")
+            
+            # 검색어 토큰화 (다중 키워드 검색 지원)
+            search_tokens = search_text.split()
+            
+            total_types = len(equipment_types)
+            matched_items = []
             
             # 각 장비 유형별 파라미터 로드 및 검색어에 맞는 항목만 표시
-            for type_id, type_name, _ in equipment_types:
-                if search_text in type_name.lower():
-                    # 장비 유형 이름에 검색어가 포함된 경우 모든 파라미터 표시
-                    self.add_equipment_parameters_to_tree(type_id, type_name)
-                else:
-                    # 장비 유형 이름에 검색어가 없는 경우 파라미터별로 검색
+            for idx, (type_id, type_name, _) in enumerate(equipment_types):
+                progress = 10 + (idx / total_types * 80)
+                loading_dialog.update_progress(progress, f"검색 중: {type_name}")
+                
+                # 장비 유형 이름 검색
+                type_match = all(token in type_name.lower() for token in search_tokens)
+                
+                if type_match:
+                    # 장비 유형 이름에 모든 검색 토큰이 포함된 경우 모든 파라미터 추가
                     default_values = self.db_schema.get_default_values(type_id)
                     
-                    # 파트와 모듈 구분 (type_name에서 파싱)
+                    # 파트와 모듈 구분
                     if '_' in type_name:
                         module, part = type_name.split('_', 1)
                     else:
                         module, part = type_name, ""
                     
-                    # 파라미터 이름, 값 등에 검색어가 포함된 항목만 추가
                     for value_id, param_name, default_val, min_val, max_val, _ in default_values:
-                        if (search_text in param_name.lower() or 
-                            search_text in str(default_val).lower() or
-                            search_text in str(min_val).lower() or
-                            search_text in str(max_val).lower()):
+                        matched_items.append({
+                            'value_id': value_id,
+                            'module': module,
+                            'part': part,
+                            'param_name': param_name,
+                            'default_val': default_val,
+                            'min_val': min_val,
+                            'max_val': max_val,
+                            'relevance': 100  # 장비 유형 이름 일치는 가장 높은 연관성
+                        })
+                else:
+                    # 파라미터별 검색
+                    default_values = self.db_schema.get_default_values(type_id)
+                    
+                    # 파트와 모듈 구분
+                    if '_' in type_name:
+                        module, part = type_name.split('_', 1)
+                    else:
+                        module, part = type_name, ""
+                    
+                    for value_id, param_name, default_val, min_val, max_val, _ in default_values:
+                        # 각 필드에 대해 검색어 토큰 포함 여부 확인
+                        param_match = all(token in param_name.lower() for token in search_tokens)
+                        default_match = all(token in str(default_val).lower() for token in search_tokens)
+                        min_match = all(token in str(min_val).lower() for token in search_tokens)
+                        max_match = all(token in str(max_val).lower() for token in search_tokens)
+                        
+                        if param_match or default_match or min_match or max_match:
+                            # 연관성 점수 계산 (파라미터 이름 일치가 가장 중요)
+                            relevance = 0
+                            if param_match: relevance += 80
+                            if default_match: relevance += 40
+                            if min_match: relevance += 30
+                            if max_match: relevance += 30
                             
-                            self.all_params_tree.insert(
-                                "", tk.END, 
-                                values=(module, part, param_name, default_val, min_val, max_val),
-                                tags=(str(value_id),)
-                            )
+                            matched_items.append({
+                                'value_id': value_id,
+                                'module': module,
+                                'part': part,
+                                'param_name': param_name,
+                                'default_val': default_val,
+                                'min_val': min_val,
+                                'max_val': max_val,
+                                'relevance': relevance
+                            })
             
-            # 정렬
-            self.sort_all_parameters()
+            # 연관성 점수에 따라 결과 정렬 (높은 순서로)
+            matched_items.sort(key=lambda x: (-x['relevance'], x['module'], x['part'], x['param_name']))
+            
+            loading_dialog.update_progress(95, "검색 결과 표시 중...")
+            
+            # 트리뷰에 결과 추가
+            for item in matched_items:
+                self.all_params_tree.insert(
+                    "", tk.END, 
+                    values=(item['module'], item['part'], item['param_name'], 
+                            item['default_val'], item['min_val'], item['max_val']),
+                    tags=(str(item['value_id']),)
+                )
+            
+            # 검색 결과 표시
+            self.update_log(f"검색 결과: '{search_text}'\uc5d0 대해 {len(matched_items)}개의 파라미터 발견")
+            loading_dialog.update_progress(100, "검색 완료")
+
             
         except Exception as e:
             messagebox.showerror("오류", f"파라미터 필터링 중 오류 발생: {str(e)}")
@@ -436,6 +501,11 @@ def add_default_db_functions_to_class(cls):
         """새 장비 유형을 추가합니다."""
         if not self.maint_mode:
             messagebox.showinfo("알림", "유지보수 모드에서만 장비 유형을 추가할 수 있습니다.")
+            return
+        
+        # 이미 열려있는 다이얼로그가 있는지 확인
+        if hasattr(self, '_equipment_type_dialog') and self._equipment_type_dialog.winfo_exists():
+            self._equipment_type_dialog.lift()  # 이미 열려있으면 앞으로 가져오기
             return
         
         type_name = simpledialog.askstring("장비 유형 추가", "추가할 장비 유형 이름을 입력하세요:")

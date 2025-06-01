@@ -398,3 +398,117 @@ class DBSchema:
         except Exception as e:
             print(f"변경 이력 조회 중 오류 발생: {str(e)}")
             return []
+            
+    def get_change_history_count(self, start_date=None, end_date=None, item_type=None, change_type=None):
+        """필터링 조건에 맞는 변경 이력의 총 개수를 반환합니다.
+        
+        Args:
+            start_date (str, optional): 시작 날짜 (YYYY-MM-DD 형식). 기본값은 None입니다.
+            end_date (str, optional): 종료 날짜 (YYYY-MM-DD 형식). 기본값은 None입니다.
+            item_type (str, optional): 항목 유형 필터. 기본값은 None입니다.
+            change_type (str, optional): 변경 유형 필터. 기본값은 None입니다.
+            
+        Returns:
+            int: 변경 이력 데이터 총 개수
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                query = "SELECT COUNT(*) FROM Change_History"
+                conditions = []
+                params = []
+                
+                # 날짜 필터 적용
+                if start_date:
+                    conditions.append("timestamp >= ?")
+                    params.append(f"{start_date} 00:00:00")
+                
+                if end_date:
+                    conditions.append("timestamp <= ?")
+                    params.append(f"{end_date} 23:59:59")
+                
+                # 항목 유형 필터 적용
+                if item_type:
+                    conditions.append("item_type = ?")
+                    params.append(item_type)
+                
+                # 변경 유형 필터 적용
+                if change_type:
+                    conditions.append("change_type = ?")
+                    params.append(change_type)
+                
+                # 조건 조합
+                if conditions:
+                    query += " WHERE " + " AND ".join(conditions)
+                
+                cursor.execute(query, params)
+                count = cursor.fetchone()[0]
+                
+                return count
+                
+        except Exception as e:
+            print(f"변경 이력 개수 조회 중 오류 발생: {str(e)}")
+            return 0
+            
+    def get_change_history_paged(self, start_date=None, end_date=None, item_type=None, change_type=None, limit=100, offset=0):
+        """페이징 처리된 변경 이력을 조회합니다.
+        
+        Args:
+            start_date (str, optional): 시작 날짜 (YYYY-MM-DD 형식). 기본값은 None입니다.
+            end_date (str, optional): 종료 날짜 (YYYY-MM-DD 형식). 기본값은 None입니다.
+            item_type (str, optional): 항목 유형 필터. 기본값은 None입니다.
+            change_type (str, optional): 변경 유형 필터. 기본값은 None입니다.
+            limit (int, optional): 한 페이지에 표시할 항목 수. 기본값은 100입니다.
+            offset (int, optional): 조회 시작 위치. 기본값은 0입니다.
+            
+        Returns:
+            list: 변경 이력 데이터 목록 (페이징 처리됨)
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                query = "SELECT id, change_type, item_type, item_name, old_value, new_value, changed_by, timestamp FROM Change_History"
+                conditions = []
+                params = []
+                
+                # 날짜 필터 적용
+                if start_date:
+                    conditions.append("timestamp >= ?")
+                    params.append(f"{start_date} 00:00:00")
+                
+                if end_date:
+                    conditions.append("timestamp <= ?")
+                    params.append(f"{end_date} 23:59:59")
+                
+                # 항목 유형 필터 적용
+                if item_type:
+                    conditions.append("item_type = ?")
+                    params.append(item_type)
+                
+                # 변경 유형 필터 적용
+                if change_type:
+                    conditions.append("change_type = ?")
+                    params.append(change_type)
+                
+                # 조건 조합
+                if conditions:
+                    query += " WHERE " + " AND ".join(conditions)
+                
+                # 정렬 (최신순)
+                query += " ORDER BY timestamp DESC"
+                
+                # 페이징 처리
+                query += " LIMIT ? OFFSET ?"
+                params.append(limit)
+                params.append(offset)
+                
+                cursor.execute(query, params)
+                results = cursor.fetchall()
+                
+                return results
+                
+        except Exception as e:
+            print(f"페이징 처리된 변경 이력 조회 중 오류 발생: {str(e)}")
+            return []

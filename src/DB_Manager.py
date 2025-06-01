@@ -21,6 +21,8 @@ from openpyxl.chart import BarChart, Reference
 from db_schema import DBSchema
 from default_db_helpers import add_default_db_functions_to_class
 from change_history_helpers import add_change_history_functions_to_class
+from common_utils import verify_password, change_maintenance_password
+from LoadingDialog import LoadingDialog
 
 class DBManager:
     def __init__(self):
@@ -47,7 +49,7 @@ class DBManager:
         
         # Maintenance Mode 상태 변수
         self.maint_mode = False
-        self.default_password = "1234"  # 실제 배포시에는 더 안전한 방식으로 관리
+        # 설정 파일에서 비밀번호 관리 (common_utils.py의 함수 사용)
         
         # DB 스키마 초기화
         self.db_schema = DBSchema()
@@ -121,29 +123,32 @@ class DBManager:
         self.log_text.configure(state=tk.DISABLED)
     
     def create_menu(self):
+        """메뉴바를 생성합니다."""
         menubar = tk.Menu(self.window)
-        self.window.config(menu=menubar)
         
         # 파일 메뉴
         file_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="파일", menu=file_menu)
         file_menu.add_command(label="폴더 열기 (Ctrl+O)", command=self.load_folder)
         file_menu.add_separator()
         file_menu.add_command(label="보고서 내보내기", command=self.export_report)
         file_menu.add_separator()
         file_menu.add_command(label="종료", command=self.window.quit)
+        menubar.add_cascade(label="파일", menu=file_menu)
         
-        # 도구 메뉴 추가
+        # 도구 메뉴
         tools_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="도구", menu=tools_menu)
         tools_menu.add_command(label="Maintenance Mode", command=self.toggle_maint_mode)
+        tools_menu.add_command(label="비밀번호 변경", command=self.show_change_password_dialog)
+        menubar.add_cascade(label="도구", menu=tools_menu)
         
         # 도움말 메뉴
         help_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="도움말", menu=help_menu)
         help_menu.add_command(label="사용 설명서 (F1)", command=self.show_user_guide)
         help_menu.add_separator()
         help_menu.add_command(label="프로그램 정보", command=self.show_about)
+        menubar.add_cascade(label="도움말", menu=help_menu)
+        
+        self.window.config(menu=menubar)
 
     def toggle_maint_mode(self):
         """유지보수 모드 토글"""
@@ -157,18 +162,65 @@ class DBManager:
         else:
             # 유지보수 모드 활성화 (비밀번호 확인)
             password = simpledialog.askstring("유지보수 모드", "비밀번호를 입력하세요:", show="*")
-            if password == self.default_password:
+            if password is None:  # 취소 버튼 클릭 시
+                return
+            
+            if verify_password(password):
+                # 로딩 다이얼로그 표시
+                loading_dialog = LoadingDialog(self.window)
+                loading_dialog.update_progress(10, "유지보수 모드 활성화 중...")
+                
                 self.maint_mode = True
                 self.status_bar.config(text="유지보수 모드 활성화")
                 self.update_log("유지보수 모드가 활성화되었습니다.")
+                
                 # 유지보수 관련 기능 활성화
-                self.enable_maint_features()
+                try:
+                    loading_dialog.update_progress(30, "기본 DB 관리 기능 초기화 중...")
+                    self.enable_maint_features()
+                    loading_dialog.update_progress(100, "완료")
+                    loading_dialog.close()
+                except Exception as e:
+                    loading_dialog.close()
+                    messagebox.showerror("오류", f"유지보수 모드 활성화 중 오류 발생: {str(e)}")
             else:
                 messagebox.showerror("오류", "비밀번호가 일치하지 않습니다.")
                 return
         
         # Default DB 관련 UI 요소 상태 업데이트
         self.update_default_db_ui_state()
+    
+    def show_change_password_dialog(self):
+        """유지보수 모드 비밀번호 변경 다이얼로그를 표시합니다."""
+        # 현재 비밀번호 확인
+        current_password = simpledialog.askstring("비밀번호 변경", "현재 비밀번호를 입력하세요:", show="*")
+        if current_password is None:  # 취소 버튼 클릭 시
+            return
+            
+        if not verify_password(current_password):
+            messagebox.showerror("오류", "현재 비밀번호가 일치하지 않습니다.")
+            return
+            
+        # 새 비밀번호 입력
+        new_password = simpledialog.askstring("비밀번호 변경", "새 비밀번호를 입력하세요:", show="*")
+        if new_password is None:  # 취소 버튼 클릭 시
+            return
+            
+        # 새 비밀번호 확인
+        confirm_password = simpledialog.askstring("비밀번호 변경", "새 비밀번호를 다시 입력하세요:", show="*")
+        if confirm_password is None:  # 취소 버튼 클릭 시
+            return
+            
+        if new_password != confirm_password:
+            messagebox.showerror("오류", "새 비밀번호가 일치하지 않습니다.")
+            return
+            
+        # 비밀번호 변경
+        if change_maintenance_password(current_password, new_password):
+            messagebox.showinfo("성공", "비밀번호가 성공적으로 변경되었습니다.")
+            self.update_log("유지보수 모드 비밀번호가 변경되었습니다.")
+        else:
+            messagebox.showerror("오류", "비밀번호 변경에 실패했습니다.")
     
     def update_default_db_ui_state(self):
         """유지보수 모드에 따라 Default DB 관련 UI 요소들의 상태를 업데이트합니다."""
@@ -189,6 +241,25 @@ class DBManager:
 
     def enable_maint_features(self):
         """유지보수 모드 활성화 시 필요한 기능을 활성화합니다."""
+        # 유지보수 모드 관련 탭 활성화
+        if hasattr(self, 'notebook') and self.notebook:
+            for tab_id in range(self.notebook.index('end')):
+                if self.notebook.tab(tab_id, 'text') in ["Default DB 관리", "QC 검수", "변경 이력 관리"]:
+                    self.notebook.tab(tab_id, state='normal')
+        
+        # 추가 버튼 활성화
+        for widget_name in ['add_equipment_button', 'add_parameter_button', 'edit_button', 'delete_button']:
+            if hasattr(self, widget_name) and getattr(self, widget_name):
+                getattr(self, widget_name).config(state='normal')
+        
+        # 트리뷰 편집 기능 활성화
+        if hasattr(self, 'equipment_tree'):
+            self.equipment_tree.bind('<Double-1>', self.on_tree_double_click)
+        
+        # 컨텍스트 메뉴 바인딩 활성화
+        if hasattr(self, 'equipment_tree'):
+            self.equipment_tree.bind('<Button-3>', self.show_context_menu)
+        
         # QC 검수 탭 추가
         self.create_qc_tab()
         

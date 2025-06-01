@@ -13,7 +13,8 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.dates as mdates
 import pandas as pd
-from common_utils import create_treeview_with_scrollbar, create_label_entry_pair
+from common_utils import create_treeview_with_scrollbar, create_label_entry_pair, load_settings
+from LoadingDialog import LoadingDialog
 
 def add_change_history_functions_to_class(cls):
     """
@@ -70,6 +71,21 @@ def add_change_history_functions_to_class(cls):
         ttk.Radiobutton(change_frame, text="수정", variable=self.change_type_var, value="update").pack(side=tk.LEFT, padx=5)
         ttk.Radiobutton(change_frame, text="삭제", variable=self.change_type_var, value="delete").pack(side=tk.LEFT, padx=5)
         
+        # 페이지 설정
+        page_frame = ttk.Frame(left_frame)
+        page_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(page_frame, text="페이지:").pack(side=tk.LEFT, padx=5)
+        self.current_page_var = tk.IntVar(value=1)
+        self.current_page_entry = ttk.Entry(page_frame, textvariable=self.current_page_var, width=5)
+        self.current_page_entry.pack(side=tk.LEFT, padx=2)
+        
+        self.total_pages_label = ttk.Label(page_frame, text="/ 1")
+        self.total_pages_label.pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(page_frame, text="◀", width=3, command=lambda: self.change_page(-1)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(page_frame, text="▶", width=3, command=lambda: self.change_page(1)).pack(side=tk.LEFT, padx=2)
+        
         # 조회 버튼
         button_frame = ttk.Frame(left_frame)
         button_frame.pack(fill=tk.X, pady=10)
@@ -121,57 +137,81 @@ def add_change_history_functions_to_class(cls):
     def load_change_history(self):
         """변경 이력을 로드하고 표시합니다."""
         try:
+            # 로딩 다이얼로그 표시
+            loading_dialog = LoadingDialog(self.window)
+            loading_dialog.update_progress(10, "변경 이력 조회 중...")
+            
+            # 트리뷰 초기화
+            for item in self.history_tree.get_children():
+                self.history_tree.delete(item)
+            
             # 필터 조건 가져오기
             start_date = self.start_date_var.get() if self.start_date_var.get() else None
             end_date = self.end_date_var.get() if self.end_date_var.get() else None
             item_type = None if self.item_type_var.get() == "all" else self.item_type_var.get()
             change_type = None if self.change_type_var.get() == "all" else self.change_type_var.get()
             
-            # 변경 이력 조회
-            history_data = self.db_schema.get_change_history(start_date, end_date, item_type, change_type)
+            # 페이지 정보 가져오기
+            settings = load_settings()
+            page_size = settings.get('page_size', 100)
+            current_page = self.current_page_var.get()
             
-            # 트리뷰 초기화
-            for item in self.history_tree.get_children():
-                self.history_tree.delete(item)
+            # 전체 변경 이력 개수 조회
+            total_count = self.db_schema.get_change_history_count(start_date, end_date, item_type, change_type)
+            loading_dialog.update_progress(30, f"전체 {total_count}개 항목 중 조회 중...")
+            
+            # 페이지 정보 업데이트
+            total_pages = max(1, (total_count + page_size - 1) // page_size)
+            self.total_pages_label.config(text=f"/ {total_pages}")
+            
+            # 현재 페이지가 유효한지 확인
+            if current_page > total_pages:
+                current_page = total_pages
+                self.current_page_var.set(current_page)
+            elif current_page < 1:
+                current_page = 1
+                self.current_page_var.set(current_page)
+            
+            # 변경 이력 조회 (페이징 적용)
+            offset = (current_page - 1) * page_size
+            history_data = self.db_schema.get_change_history_paged(start_date, end_date, item_type, change_type, page_size, offset)
+            loading_dialog.update_progress(70, "데이터 처리 중...")
+            
+            if not history_data:
+                loading_dialog.close()
+                messagebox.showinfo("알림", "조회된 변경 이력이 없습니다.")
+                return
             
             # 트리뷰에 데이터 추가
-            for row in history_data:
-                id, change_type, item_type, item_name, old_value, new_value, changed_by, timestamp = row
-                
-                # 변경 유형에 따라 아이콘 설정
-                icon = ""
-                if change_type == "add":
-                    icon = "➕"
-                elif change_type == "update":
-                    icon = "🔄"
-                elif change_type == "delete":
-                    icon = "❌"
-                
-                # 항목 유형 변환
-                if item_type == "equipment_type":
-                    item_type_display = "장비 유형"
-                elif item_type == "parameter":
-                    item_type_display = "파라미터"
-                else:
-                    item_type_display = item_type
+            for idx, row in enumerate(history_data):
+                item_id, change_type, item_type, item_name, old_value, new_value, changed_by, timestamp = row
                 
                 # 변경 유형 변환
-                if change_type == "add":
-                    change_type_display = "추가"
-                elif change_type == "update":
-                    change_type_display = "수정"
-                elif change_type == "delete":
-                    change_type_display = "삭제"
-                else:
-                    change_type_display = change_type
+                change_type_display = {
+                    "add": "추가",
+                    "update": "수정",
+                    "delete": "삭제"
+                }.get(change_type, change_type)
                 
-                self.history_tree.insert(
-                    "", tk.END, 
-                    values=(timestamp, f"{icon} {change_type_display}", item_type_display, item_name, 
-                            old_value, new_value, changed_by),
-                    tags=(str(id),)
-                )
+                # 항목 유형 변환
+                item_type_display = {
+                    "equipment_type": "장비 유형",
+                    "parameter": "파라미터"
+                }.get(item_type, item_type)
+                
+                # 아이템 추가
+                self.history_tree.insert("", tk.END, values=(
+                    item_id,
+                    change_type_display,
+                    item_type_display,
+                    item_name,
+                    old_value if old_value else "-",
+                    new_value if new_value else "-",
+                    changed_by,
+                    timestamp
+                ))
             
+            loading_dialog.update_progress(90, "시각화 처리 중...")
             # 시각화
             self.visualize_change_history(history_data)
             
@@ -294,10 +334,24 @@ def add_change_history_functions_to_class(cls):
             messagebox.showerror("오류", f"변경 이력 내보내기 중 오류 발생: {str(e)}")
             self.update_log(f"변경 이력 내보내기 오류: {str(e)}")
     
+    def change_page(self, direction):
+        """페이지를 변경합니다."""
+        current_page = self.current_page_var.get()
+        new_page = current_page + direction
+        
+        # 페이지 범위 확인
+        if new_page < 1:
+            return
+            
+        # 페이지 변경 및 데이터 로드
+        self.current_page_var.set(new_page)
+        self.load_change_history()
+    
     # 클래스에 메서드 추가
     cls.create_change_history_tab = create_change_history_tab
     cls.load_change_history = load_change_history
     cls.visualize_change_history = visualize_change_history
     cls.export_change_history = export_change_history
+    cls.change_page = change_page
     
     return cls
