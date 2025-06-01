@@ -26,94 +26,68 @@ from LoadingDialog import LoadingDialog
 
 class DBManager:
     def __init__(self):
+        # 1. 상태 변수 및 기본 속성 초기화
+        self.maint_mode = False
+        self.selected_equipment_type_id = None
+        self.file_names = []
+        self.folder_path = ""
+        self.merged_df = None
+        self.context_menu = None
+
+        # 2. DB 스키마 및 기능 확장 초기화 (예외 발생 시 메시지 출력)
+        try:
+            self.db_schema = DBSchema()
+        except Exception as e:
+            print(f"DB 스키마 초기화 실패: {str(e)}")
+            self.db_schema = None
+        add_default_db_functions_to_class(DBManager)
+        add_change_history_functions_to_class(DBManager)
+
+        # 3. 메인 윈도우 및 UI 요소 초기화
         self.window = tk.Tk()
         self.window.title("DB Manager")
         self.window.geometry("1300x800")
-        
-        # 컨텍스트 메뉴 관련 변수
-        self.context_menu = None
-        
-        # 실행 파일과 개발 환경 모두에서 작동하도록 경로 처리
         try:
-            if getattr(sys, 'frozen', False):
-                # 실행 파일로 실행될 때의 경로
-                application_path = sys._MEIPASS
-            else:
-                # 일반 Python 스크립트로 실행될 때의 경로
-                application_path = os.path.dirname(os.path.abspath(__file__))
-            
+            application_path = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
             icon_path = os.path.join(application_path, "resources", "icons", "db_compare.ico")
             self.window.iconbitmap(icon_path)
         except Exception as e:
             print(f"아이콘 로드 실패: {str(e)}")
-        
-        # Maintenance Mode 상태 변수
-        self.maint_mode = False
-        # 설정 파일에서 비밀번호 관리 (common_utils.py의 함수 사용)
-        
-        # DB 스키마 초기화
-        self.db_schema = DBSchema()
-        
-        # Default DB 관리 기능 추가 (클래스에 메서드 추가)
-        add_default_db_functions_to_class(DBManager)
-        
-        # 변경 이력 관리 기능 추가
-        add_change_history_functions_to_class(DBManager)
-        
+
         # 메뉴바 생성
         self.create_menu()
-        
-        # 상태 변수 초기화
-        self.selected_equipment_type_id = None
-        
-        # 단축키 바인딩
-        self.window.bind('<F1>', lambda event: self.show_user_guide())
-        self.window.bind('<Control-o>', lambda event: self.load_folder())
-        self.window.bind('<Control-O>', lambda event: self.load_folder())
-        
-        # 상태 표시줄 생성
+
+        # 상태바
         self.status_bar = ttk.Label(self.window, relief=tk.SUNKEN, anchor=tk.W)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
-        
-        # 기본 UI 구성
+
+        # 메인 노트북 및 비교 노트북
         self.main_notebook = ttk.Notebook(self.window)
         self.main_notebook.pack(expand=True, fill=tk.BOTH)
-        
-        # 비교 노트북 생성
         self.comparison_notebook = ttk.Notebook(self.main_notebook)
         self.main_notebook.add(self.comparison_notebook, text="DB 비교")
-        
-        # 초기 상태 설정
-        self.file_names = []
-        self.folder_path = ""
-        self.merged_df = None
-        
-        # 로그 표시 영역 생성 및 초기화
+
+        # 로그 표시 영역 및 스크롤바
         self.log_text = tk.Text(self.window, height=5, state=tk.DISABLED)
         self.log_text.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=5)
-        
-        # 스크롤바 추가
         log_scrollbar = ttk.Scrollbar(self.log_text, orient="vertical", command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=log_scrollbar.set)
         log_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # 비교 탭 생성
-        self.create_comparison_tabs()
-        
-        # 초기 화면 설정
-        self.status_bar.config(text="Ready")
-        
-        # 로컬 데이터베이스 초기화
-        try:
-            self.db_schema = DBSchema()
-            self.update_log("로컬 데이터베이스 초기화 완료")
-            
-            # Default DB 관리 기능 준비
-            self.update_log("Default DB 관리 기능 준비 완료")
-        except Exception as e:
-            messagebox.showerror("데이터베이스 오류", f"로컬 DB 초기화 중 오류 발생: {str(e)}")
-            self.update_log(f"데이터베이스 오류: {str(e)}")
 
+        # 단축키 바인딩 (중복 제거, 함수 직접 참조)
+        self.window.bind('<F1>', self.show_user_guide)
+        for key in ('<Control-o>', '<Control-O>'):
+            self.window.bind(key, self.load_folder)
+
+        # 비교 탭 생성 및 상태 초기화
+        self.create_comparison_tabs()
+        self.status_bar.config(text="Ready")
+        self.update_log("DB Manager 초기화 완료")
+        if self.db_schema:
+            self.update_log("로컬 데이터베이스 초기화 완료")
+            self.update_log("Default DB 관리 기능 준비 완료")
+        else:
+            self.update_log("DB 스키마 초기화 실패")
 
     def update_log(self, message):
         """로그 표시 영역에 메시지를 추가합니다."""
@@ -240,37 +214,49 @@ class DBManager:
         self.update_all_tabs()
 
     def enable_maint_features(self):
-        """유지보수 모드 활성화 시 필요한 기능을 활성화합니다."""
-        # 유지보수 모드 관련 탭 활성화
-        if hasattr(self, 'notebook') and self.notebook:
-            for tab_id in range(self.notebook.index('end')):
-                if self.notebook.tab(tab_id, 'text') in ["Default DB 관리", "QC 검수", "변경 이력 관리"]:
-                    self.notebook.tab(tab_id, state='normal')
-        
-        # 추가 버튼 활성화
-        for widget_name in ['add_equipment_button', 'add_parameter_button', 'edit_button', 'delete_button']:
-            if hasattr(self, widget_name) and getattr(self, widget_name):
-                getattr(self, widget_name).config(state='normal')
-        
-        # 트리뷰 편집 기능 활성화
-        if hasattr(self, 'equipment_tree'):
-            self.equipment_tree.bind('<Double-1>', self.on_tree_double_click)
-        
-        # 컨텍스트 메뉴 바인딩 활성화
-        if hasattr(self, 'equipment_tree'):
-            self.equipment_tree.bind('<Button-3>', self.show_context_menu)
-        
-        # QC 검수 탭 추가
-        self.create_qc_tab()
-        
-        # Default DB 관리 탭 추가
-        self.create_default_db_tab()
-        
-        # 변경 이력 관리 탭 추가
-        self.create_change_history_tab()
-        
-        # 로그에 기록
-        self.update_log("Maintenance Mode가 활성화되었습니다.")
+        """유지보수 모드 활성화 시 필요한 기능을 활성화합니다. (최적화: 모든 무거운 작업을 스레드로 분리)"""
+        import threading
+        loading_dialog = LoadingDialog(self.window)
+
+        def worker():
+            try:
+                # 1. UI 관련 활성화 (after로 안전하게)
+                if hasattr(self, 'notebook') and self.notebook:
+                    for tab_id in range(self.notebook.index('end')):
+                        if self.notebook.tab(tab_id, 'text') in ["Default DB 관리", "QC 검수", "변경 이력 관리"]:
+                            self.window.after(0, lambda tab_id=tab_id: self.notebook.tab(tab_id, state='normal'))
+                for widget_name in ['add_equipment_button', 'add_parameter_button', 'edit_button', 'delete_button']:
+                    if hasattr(self, widget_name) and getattr(self, widget_name):
+                        self.window.after(0, lambda wn=widget_name: getattr(self, wn).config(state='normal'))
+                if hasattr(self, 'equipment_tree'):
+                    self.window.after(0, lambda: self.equipment_tree.bind('<Double-1>', self.on_tree_double_click))
+                    self.window.after(0, lambda: self.equipment_tree.bind('<Button-3>', self.show_context_menu))
+
+                # 2. 무거운 탭 생성 (QC/Default DB/변경이력)
+                loading_dialog.update_progress(10, "QC 탭 생성 중...")
+                if hasattr(self, "create_qc_check_tab"):
+                    self.create_qc_check_tab()
+                elif hasattr(self, "create_qc_tab"):
+                    self.create_qc_tab()
+
+                loading_dialog.update_progress(40, "Default DB 관리 탭 생성 중...")
+                if hasattr(self, "create_default_db_tab"):
+                    self.create_default_db_tab()
+
+                loading_dialog.update_progress(70, "변경 이력 관리 탭 생성 중...")
+                if hasattr(self, "create_change_history_tab"):
+                    self.create_change_history_tab()
+
+                # 3. 완료 처리
+                self.window.after(0, lambda: self.update_log("Maintenance Mode가 활성화되었습니다."))
+                loading_dialog.update_progress(100, "완료!")
+                self.window.after(0, loading_dialog.close)
+            except Exception as e:
+                self.window.after(0, loading_dialog.close)
+                self.window.after(0, lambda e=e: messagebox.showerror("오류", f"유지보수 모드 활성화 중 오류 발생: {str(e)}"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
         
     def disable_maint_features(self):
         """Maintenance Mode 비활성화 시 관련 기능을 제거합니다."""
@@ -284,12 +270,6 @@ class DBManager:
         for tab in self.main_notebook.tabs():
             if self.main_notebook.tab(tab, "text") == "DB 비교":
                 self.main_notebook.select(tab)
-                break
-        
-        # 로그에 기록
-        self.update_log("Maintenance Mode가 비활성화되었습니다.")
-
-    def create_qc_tab(self):
         """개선된 QC 검수 탭을 생성합니다. 이 탭은 유지보수 모드에서 활성화됩니다."""
         # QC 검수 탭이 없을 때만 생성
         if not any(self.main_notebook.tab(tab, "text") == "QC 검수" 
@@ -399,27 +379,6 @@ class DBManager:
             
             # 기본 장비 유형 목록 로드
             self.load_equipment_types_for_qc()
-
-    def on_qc_equipment_type_selected(self, event):
-        # Placeholder for handling equipment type selection in QC tab
-        selected_type = self.qc_equipment_type_combo.get()
-        print(f"QC Tab: Equipment type selected - {selected_type}")
-        # TODO: Implement logic to load defaults or perform actions based on selection
-        pass
-
-    def start_validation(self):
-        # Placeholder for starting the QC validation process
-        print("QC Validation Started")
-        # TODO: Implement the actual validation logic here
-        pass
-
-    def refresh_validation_view(self):
-        # Placeholder for refreshing the QC validation results view
-        print("QC View Refreshed")
-        # TODO: Implement logic to refresh the validation results display
-        pass
-
-    def export_validation_report(self):
         # Placeholder for exporting the QC validation report
         print("Exporting QC Validation Report")
         # TODO: Implement the actual report export logic here
@@ -2110,6 +2069,11 @@ class DBManager:
             'module_diff': module_diff,
             'part_diff': part_diff
         }
+
+    def on_qc_equipment_type_selected(self, event=None):
+        print("QC Tab: Equipment type selected")
+        # TODO: 실제 로직 구현 필요
+        pass
 
     def create_about_tab(self):
         # About 탭 생성
