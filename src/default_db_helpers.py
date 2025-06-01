@@ -135,6 +135,10 @@ def add_default_db_functions_to_class(cls):
         param_list_frame = ttk.Frame(right_frame)
         param_list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
+        # 파라미터 목록 라벨 추가 (parameter_label 속성 생성)
+        self.parameter_label = ttk.Label(param_list_frame, text="ItemName 목록", font=("맑은 고딕", 10, "bold"))
+        self.parameter_label.pack(anchor="w", pady=(0, 5))
+        
         # 파라미터 트리뷰 생성
         columns = ("parameter", "default", "min", "max")
         headings = {
