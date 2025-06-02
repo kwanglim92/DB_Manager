@@ -1,7 +1,7 @@
 # 이 파일은 리팩토링되어 실제 코드는 app/qc.py에서 확인하세요.
 # 프로그램 실행은 main.py를 사용하세요.
 
-
+"""
 이 모듈은 DBManager 클래스에 QC 검수 기능을 추가하는 함수들을 제공합니다.
 런타임에 DBManager 클래스에 기능을 추가하는 방식으로 동작합니다.
 """
@@ -18,11 +18,11 @@ from common_utils import create_treeview_with_scrollbar
 def add_qc_check_functions_to_class(cls):
     """
     DBManager 클래스에 QC 검수 기능을 추가합니다.
-    
+
     Args:
         cls: 기능을 추가할 클래스 (DBManager)
     """
-    
+
     def create_qc_check_tab(self):
         """QC 검수 탭을 생성합니다."""
         qc_tab = ttk.Frame(self.main_notebook)
