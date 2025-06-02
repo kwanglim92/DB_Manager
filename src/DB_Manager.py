@@ -492,8 +492,6 @@ class DBManager:
         """비교 관련 탭 생성"""
         # 격자 뷰 탭 생성
         self.create_grid_view_tab()
-        # DB 값 비교 탭 생성
-        self.create_comparison_tab()
         # 다른 값만 보기 탭 생성
         self.create_diff_only_tab()
         # 보고서 탭 생성
@@ -674,19 +672,57 @@ class DBManager:
                             tree.insert(part_node, "end", text=item_name, 
                                       values=(module, part, item_name, item_value))
 
-    def create_comparison_tab(self):
-        pass
+    # create_comparison_tab 완전 삭제 (DB 값 비교 탭 및 기능 제거)
 
     def create_diff_only_tab(self):
-        """값이 다른 항목만 표시하는 탭 생성"""
+        import pandas as pd
+        import numpy as np
+        from tkinter import filedialog
+
+        def treeview_to_dataframe(tree, columns):
+            data = [tree.item(item)["values"] for item in tree.get_children()]
+            return pd.DataFrame(data, columns=columns)
+
+        def export_treeview_to_excel(tree, columns, default_name):
+            df = treeview_to_dataframe(tree, columns)
+            file_path = filedialog.asksaveasfilename(
+                title="엑셀로 내보내기",
+                defaultextension=".xlsx",
+                filetypes=[("Excel 파일", ".xlsx"), ("모든 파일", "*.*")],
+                initialfile=default_name
+            )
+            if not file_path:
+                return
+            df.to_excel(file_path, index=False)
+            messagebox.showinfo("완료", f"엑셀 파일이 저장되었습니다.\n{file_path}")
+            if messagebox.askyesno("파일 열기", "저장된 파일을 바로 열까요?"):
+                import os
+                os.startfile(file_path)
+
+        # --- UI 프레임 ---
         diff_frame = ttk.Frame(self.comparison_notebook)
         self.comparison_notebook.add(diff_frame, text="🔍 차이점만 보기")
+
+        control_frame = ttk.Frame(diff_frame)
+        control_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        # 검색 입력란
+        search_var = tk.StringVar()
+        ttk.Label(control_frame, text="검색: ").pack(side=tk.LEFT)
+        search_entry = ttk.Entry(control_frame, textvariable=search_var, width=20)
+        search_entry.pack(side=tk.LEFT, padx=2)
+
+        # 엑셀로 내보내기 버튼
+        export_btn = ttk.Button(control_frame, text="엑셀로 내보내기",
+            command=lambda: export_treeview_to_excel(tree, columns, "DB_DiffOnly.xlsx"))
+        export_btn.pack(side=tk.RIGHT, padx=5)
 
         # Treeview 컬럼 설정
         columns = ["Module", "Part", "ItemName"] + self.file_names
         tree = ttk.Treeview(diff_frame, columns=columns, show="headings", height=30)
         for col in columns:
-            tree.heading(col, text=col)
+            tree.heading(col, text=col,
+                command=lambda c=col: sort_treeview(tree, c, False))
             tree.column(col, width=120 if col in ["Module", "Part", "ItemName"] else 150, anchor="w")
         tree.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
 
@@ -697,24 +733,40 @@ class DBManager:
         v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
 
-        # 값이 다른 항목만 필터링하여 표시
-        if self.merged_df is not None:
-            grouped = self.merged_df.groupby(["Module", "Part", "ItemName"])
-            for (module, part, item_name), group in grouped:
-                values = [module, part, item_name]
-                model_values = []
-                for model in self.file_names:
-                    model_value = group[group["Model"] == model]["ItemValue"].values
-                    value = model_value[0] if len(model_value) > 0 else "-"
-                    values.append(value)
-                    model_values.append(value)
-                # 값이 다른 경우만 표시
-                if len(set(model_values)) > 1:
-                    tree.insert("", "end", values=values, tags=("different",))
-            tree.tag_configure("different", background="light yellow")
+        # 데이터 렌더링 (최적화)
+        def render():
+            tree.delete(*tree.get_children())
+            if self.merged_df is not None:
+                df = self.merged_df.copy()
+                keyword = search_var.get().strip()
+                if keyword:
+                    mask = df.apply(lambda row: keyword in str(row.values), axis=1)
+                    df = df[mask]
+                grouped = df.groupby(["Module", "Part", "ItemName"])
+                for (module, part, item_name), group in grouped:
+                    values = [module, part, item_name]
+                    model_values = []
+                    for model in self.file_names:
+                        model_value = group[group["Model"] == model]["ItemValue"].values
+                        value = model_value[0] if len(model_value) > 0 else "-"
+                        values.append(value)
+                        model_values.append(value)
+                    if len(set(model_values)) > 1:
+                        tree.insert("", "end", values=values, tags=("different",))
+                tree.tag_configure("different", background="light yellow")
+        
+        def sort_treeview(tree, col, reverse):
+            l = [(tree.set(k, col), k) for k in tree.get_children("")]
+            try:
+                l.sort(key=lambda t: float(t[0]), reverse=reverse)
+            except ValueError:
+                l.sort(reverse=reverse)
+            for index, (val, k) in enumerate(l):
+                tree.move(k, '', index)
+            tree.heading(col, command=lambda: sort_treeview(tree, col, not reverse))
 
-        # 읽기 전용 (체크박스/컨텍스트 메뉴 없음)
-        tree.bind("<Button-3>", lambda e: "break")
+        search_var.trace_add('write', lambda *args: render())
+        render()
 
         comparison_frame = ttk.Frame(self.comparison_notebook)
         self.comparison_notebook.add(comparison_frame, text="DB 값 비교")
@@ -751,56 +803,23 @@ class DBManager:
             )
             self.send_to_default_btn.pack(side=tk.RIGHT, padx=10)
         else:
-            self.diff_count_label = ttk.Label(control_frame, text="값이 다른 항목: 0개")
-            self.diff_count_label.pack(side=tk.RIGHT, padx=10)
+            pass
         
-        self.item_checkboxes = {}
-        
-        # 트리뷰 생성 (유지보수 모드에 따라 컬럼 다르게)
-        if self.maint_mode:
-            columns = ["Checkbox", "Module", "Part", "ItemName"] + self.file_names
-        else:
-            columns = ["Module", "Part", "ItemName"] + self.file_names
-        self.comparison_tree = ttk.Treeview(comparison_frame, selectmode="extended", style="Custom.Treeview")
-        self.comparison_tree["columns"] = columns
-        
-        # 컬럼 설정
-        self.comparison_tree.heading("#0", text="", anchor="w")
-        self.comparison_tree.column("#0", width=0, stretch=False)
-        
-        col_offset = 0
-        if self.maint_mode:
-            self.comparison_tree.heading("Checkbox", text="선택")
-            self.comparison_tree.column("Checkbox", width=50, anchor="center")
-            col_offset = 1
-        
-        for idx, col in enumerate(["Module", "Part", "ItemName"]):
-            self.comparison_tree.heading(col, text=col, anchor="w")
-            self.comparison_tree.column(col, width=100)
-        
-        for model in self.file_names:
-            self.comparison_tree.heading(model, text=model, anchor="w")
-            self.comparison_tree.column(model, width=150)
-        
-        v_scroll = ttk.Scrollbar(comparison_frame, orient="vertical", 
-                                command=self.comparison_tree.yview)
-        h_scroll = ttk.Scrollbar(comparison_frame, orient="horizontal", 
-                                command=self.comparison_tree.xview)
-        self.comparison_tree.configure(yscroll=v_scroll.set, xscroll=h_scroll.set)
-        v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
-        self.comparison_tree.pack(expand=True, fill=tk.BOTH)
-        
-        self.comparison_tree.bind("<<TreeviewSelect>>", self.update_selected_count)
-        self.create_comparison_context_menu()
-        if not self.maint_mode:
-            self.update_comparison_context_menu_state()
-        self.update_comparison_view()
-
-    def toggle_select_all_checkboxes(self):
-        """모두 선택 체크박스 토글 시 전체 항목 체크/해제 (토글 동작)"""
-        if not self.maint_mode:
+    def export_treeview_to_excel(tree, columns, default_name):
+        df = treeview_to_dataframe(tree, columns)
+        file_path = filedialog.asksaveasfilename(
+            title="엑셀로 내보내기",
+            defaultextension=".xlsx",
+            filetypes=[("Excel 파일", ".xlsx"), ("모든 파일", "*.*")],
+            initialfile=default_name
+        )
+        if not file_path:
             return
+        df.to_excel(file_path, index=False)
+        messagebox.showinfo("완료", f"엑셀 파일이 저장되었습니다.\n{file_path}")
+        if messagebox.askyesno("파일 열기", "저장된 파일을 바로 열까요?"):
+            import os
+            os.startfile(file_path)
         check = self.select_all_var.get()
         for item in self.comparison_tree.get_children():
             values = list(self.comparison_tree.item(item, "values"))
