@@ -1,4 +1,6 @@
-# 버전: 1.1.0
+# 이 파일은 리팩토링되어 실제 코드는 app/manager.py, app/schema.py, app/loading.py 등에서 확인하세요.
+# 프로그램 실행은 main.py를 사용하세요.
+
 # 작성자: Levi Beak
 # 최종 수정일: 2025-05-01
 

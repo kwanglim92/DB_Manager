@@ -48,7 +48,9 @@ def add_default_db_functions_to_class(cls):
     
     def create_default_db_tab(self):
         """
-        Default DB 관리 탭을 생성합니다.
+       # 이 파일은 리팩토링되어 실제 코드는 app/defaultdb.py에서 확인하세요.
+# 프로그램 실행은 main.py를 사용하세요.
+생성합니다.
         장비 유형별 파라미터 관리 및 최소/최대값 설정 기능을 제공합니다.
         """
         default_db_tab = ttk.Frame(self.main_notebook)
