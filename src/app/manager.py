@@ -31,7 +31,11 @@ class DBManager:
         self.window.title("DB Manager")
         self.window.geometry("1300x800")
         try:
-            application_path = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+            if getattr(sys, 'frozen', False):
+                application_path = sys._MEIPASS
+            else:
+                # src/app/manager.py에서 프로젝트 루트로 2번 상위 디렉토리로 이동
+                application_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             icon_path = os.path.join(application_path, "resources", "icons", "db_compare.ico")
             self.window.iconbitmap(icon_path)
         except Exception as e:
@@ -49,6 +53,14 @@ class DBManager:
         self.log_text.configure(yscrollcommand=log_scrollbar.set)
         log_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.window.bind('<F1>', self.show_user_guide)
+        
+        # 탭 생성 호출을 __init__의 마지막으로 이동
+        self.create_comparison_tabs()
+        
+        # 유지보수 모드 탭들 미리 생성 (비활성화 상태)
+        self.create_qc_check_tab()
+        self.create_default_db_tab()
+        self.create_change_history_tab()
 
     def show_about(self):
         """프로그램 정보 다이얼로그 표시"""
@@ -72,7 +84,7 @@ class DBManager:
 
         for key in ('<Control-o>', '<Control-O>'):
             self.window.bind(key, self.load_folder)
-        self.create_comparison_tabs()
+        
         self.status_bar.config(text="Ready")
         self.update_log("DB Manager 초기화 완료")
         if self.db_schema:
@@ -141,7 +153,7 @@ class DBManager:
                     messagebox.showerror("오류", f"유지보수 모드 활성화 중 오류 발생: {str(e)}")
             else:
                 messagebox.showerror("오류", "비밀번호가 일치하지 않습니다.")
-                return
+            return
         self.update_default_db_ui_state()
 
     def show_change_password_dialog(self):
@@ -174,11 +186,18 @@ class DBManager:
             if self.maint_mode:
                 self.show_default_candidates_cb.configure(state="normal")
             else:
-                self.show_default_candidates_var.set(False)
+                if hasattr(self, 'show_default_candidates_var'):
+                    self.show_default_candidates_var.set(False)
                 self.show_default_candidates_cb.configure(state="disabled")
                 self.update_comparison_view()
+        
         self.update_comparison_context_menu_state()
-        self.update_all_tabs()
+        
+        # 모든 탭 업데이트
+        if hasattr(self, 'update_all_tabs'):
+            # 탭 업데이트는 파일이 로드된 경우에만
+            if self.merged_df is not None:
+                self.update_all_tabs()
 
     def enable_maint_features(self):
         """유지보수 모드 활성화 시 필요한 기능을 활성화합니다. (최적화: 모든 무거운 작업을 스레드로 분리)"""
@@ -200,6 +219,11 @@ class DBManager:
                     self.create_qc_check_tab()
                 elif hasattr(self, 'create_qc_tab'):
                     self.create_qc_tab()
+                    
+                # QC 탭에 고급 기능들 추가
+                loading_dialog.update_progress(25, "QC 고급 기능 추가 중...")
+                self.window.after(0, self.create_qc_tabs_with_advanced_features)
+                    
                 loading_dialog.update_progress(40, "Default DB 관리 탭 생성 중...")
                 if hasattr(self, 'create_default_db_tab'):
                     self.create_default_db_tab()
@@ -214,48 +238,176 @@ class DBManager:
         threading.Thread(target=worker, daemon=True).start()
 
     def create_comparison_tabs(self):
-        """비교 관련 탭 생성"""
+        """비교 관련 탭 생성 - 기본 기능만"""
         self.create_grid_view_tab()
         self.create_comparison_tab()
         self.create_diff_only_tab()
-        self.create_report_tab()
+        # 보고서, 간단 비교, 고급 분석은 QC 탭으로 이동
 
-    def create_diff_only_tab(self):
-        diff_tab = ttk.Frame(self.comparison_notebook)
-        self.comparison_notebook.add(diff_tab, text="차이만 보기")
-        control_frame = ttk.Frame(diff_tab)
+    def create_qc_tabs_with_advanced_features(self):
+        """QC 탭에 고급 기능들 추가"""
+        if not hasattr(self, 'qc_notebook'):
+            return
+            
+        # 보고서 탭을 QC 노트북에 추가
+        self.create_report_tab_in_qc()
+        
+        # 간단한 비교 기능을 QC 노트북에 추가
+        try:
+            from app.simple_comparison import add_simple_comparison_to_class
+            add_simple_comparison_to_class(DBManager)
+            if hasattr(self, 'create_simple_comparison_features_in_qc'):
+                self.create_simple_comparison_features_in_qc()
+        except ImportError as e:
+            self.update_log(f"[경고] 간단한 비교 기능을 불러올 수 없습니다: {e}")
+        
+        # 고급 비교 기능을 QC 노트북에 추가 (선택적)
+        try:
+            from app.advanced_comparison import add_advanced_comparison_to_class
+            add_advanced_comparison_to_class(DBManager)
+            if hasattr(self, 'create_advanced_comparison_features_in_qc'):
+                self.create_advanced_comparison_features_in_qc()
+        except ImportError as e:
+            self.update_log(f"[경고] 고급 비교 기능을 불러올 수 없습니다: {e}")
+
+    def create_report_tab_in_qc(self):
+        """QC 노트북에 보고서 탭 생성"""
+        if not hasattr(self, 'qc_notebook'):
+            return
+            
+        report_tab = ttk.Frame(self.qc_notebook)
+        self.qc_notebook.add(report_tab, text="보고서")
+        
+        control_frame = ttk.Frame(report_tab)
         control_frame.pack(fill=tk.X, padx=5, pady=5)
-        self.diff_only_count_label = ttk.Label(control_frame, text="값이 다른 항목: 0개")
-        self.diff_only_count_label.pack(side=tk.RIGHT, padx=10)
-        columns = ["Module", "Part", "ItemName"] + self.file_names
-        self.diff_only_tree = ttk.Treeview(diff_tab, columns=columns, show="headings", selectmode="extended")
+        
+        export_btn = ttk.Button(control_frame, text="보고서 내보내기", command=self.export_report)
+        export_btn.pack(side=tk.RIGHT, padx=10)
+        
+        columns = ["Module", "Part", "ItemName"] + (self.file_names if self.file_names else [])
+        self.qc_report_tree = ttk.Treeview(report_tab, columns=columns, show="headings", selectmode="browse")
+        
         for col in columns:
-            self.diff_only_tree.heading(col, text=col)
-            self.diff_only_tree.column(col, width=120)
-        v_scroll = ttk.Scrollbar(diff_tab, orient="vertical", command=self.diff_only_tree.yview)
-        h_scroll = ttk.Scrollbar(diff_tab, orient="horizontal", command=self.diff_only_tree.xview)
-        self.diff_only_tree.configure(yscroll=v_scroll.set, xscroll=h_scroll.set)
+            self.qc_report_tree.heading(col, text=col)
+            self.qc_report_tree.column(col, width=120)
+        
+        v_scroll = ttk.Scrollbar(report_tab, orient="vertical", command=self.qc_report_tree.yview)
+        h_scroll = ttk.Scrollbar(report_tab, orient="horizontal", command=self.qc_report_tree.xview)
+        self.qc_report_tree.configure(yscroll=v_scroll.set, xscroll=h_scroll.set)
+        
         v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
-        self.diff_only_tree.pack(expand=True, fill=tk.BOTH)
-        self.update_diff_only_view()
+        self.qc_report_tree.pack(expand=True, fill=tk.BOTH)
+        
+        self.update_qc_report_view()
 
-    def update_diff_only_view(self):
-        for item in self.diff_only_tree.get_children():
-            self.diff_only_tree.delete(item)
-        diff_count = 0
+    def update_qc_report_view(self):
+        """QC 보고서 뷰 업데이트"""
+        if not hasattr(self, 'qc_report_tree'):
+            return
+            
+        for item in self.qc_report_tree.get_children():
+            self.qc_report_tree.delete(item)
+            
         if self.merged_df is not None:
             grouped = self.merged_df.groupby(["Module", "Part", "ItemName"])
             for (module, part, item_name), group in grouped:
                 values = [module, part, item_name]
-                unique_values = group[self.file_names].nunique().values
-                if any(val > 1 for val in unique_values):
-                    for fname in self.file_names:
-                        values.append(group[fname].iloc[0] if fname in group else "")
-                    self.diff_only_tree.insert("", "end", values=values, tags=("different",))
+                for fname in self.file_names:
+                    model_data = group[group["Model"] == fname]
+                    if not model_data.empty:
+                        values.append(str(model_data["ItemValue"].iloc[0]))
+                    else:
+                        values.append("-")
+                self.qc_report_tree.insert("", "end", values=values)
+
+    def create_diff_only_tab(self):
+        """차이만 보기 탭 생성"""
+        diff_tab = ttk.Frame(self.comparison_notebook)
+        self.comparison_notebook.add(diff_tab, text="🔍 차이점 분석")
+        
+        # 상단 정보 패널
+        control_frame = ttk.Frame(diff_tab)
+        control_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        self.diff_only_count_label = ttk.Label(control_frame, text="값이 다른 항목: 0개")
+        self.diff_only_count_label.pack(side=tk.RIGHT, padx=10)
+        
+        # 트리뷰 생성
+        if self.file_names:
+            columns = ["Module", "Part", "ItemName"] + self.file_names
+        else:
+            columns = ["Module", "Part", "ItemName"]
+            
+        self.diff_only_tree = ttk.Treeview(diff_tab, columns=columns, show="headings", selectmode="extended")
+        
+        # 헤딩 설정
+        for col in columns:
+            self.diff_only_tree.heading(col, text=col)
+            if col in ["Module", "Part", "ItemName"]:
+                self.diff_only_tree.column(col, width=120)
+            else:
+                self.diff_only_tree.column(col, width=150)
+        
+        # 스크롤바 추가
+        v_scroll = ttk.Scrollbar(diff_tab, orient="vertical", command=self.diff_only_tree.yview)
+        h_scroll = ttk.Scrollbar(diff_tab, orient="horizontal", command=self.diff_only_tree.xview)
+        self.diff_only_tree.configure(yscroll=v_scroll.set, xscroll=h_scroll.set)
+        
+        # 위젯 배치
+        v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+        self.diff_only_tree.pack(expand=True, fill=tk.BOTH)
+        
+        # 차이점 데이터 업데이트
+        self.update_diff_only_view()
+
+    def update_diff_only_view(self):
+        """차이점만 보기 탭 업데이트 - 하이라이트 제거"""
+        if not hasattr(self, 'diff_only_tree'):
+            return
+            
+        for item in self.diff_only_tree.get_children():
+            self.diff_only_tree.delete(item)
+        
+        diff_count = 0
+        if self.merged_df is not None:
+            # 컬럼 업데이트
+            columns = ["Module", "Part", "ItemName"] + self.file_names
+            self.diff_only_tree["columns"] = columns
+            
+            for col in columns:
+                self.diff_only_tree.heading(col, text=col)
+                if col in ["Module", "Part", "ItemName"]:
+                    self.diff_only_tree.column(col, width=120)
+                else:
+                    self.diff_only_tree.column(col, width=150)
+            
+            grouped = self.merged_df.groupby(["Module", "Part", "ItemName"])
+            
+            for (module, part, item_name), group in grouped:
+                # 각 파일별 값 추출
+                file_values = {}
+                for model in self.file_names:
+                    model_data = group[group["Model"] == model]
+                    if not model_data.empty:
+                        file_values[model] = str(model_data["ItemValue"].iloc[0])
+                    else:
+                        file_values[model] = "-"
+                
+                # 차이점이 있는지 확인
+                unique_values = set(v for v in file_values.values() if v != "-")
+                if len(unique_values) > 1:
+                    # 차이점이 있는 항목만 추가 (하이라이트 없이)
+                    row_values = [module, part, item_name]
+                    row_values.extend([file_values.get(model, "-") for model in self.file_names])
+                    
+                    self.diff_only_tree.insert("", "end", values=row_values)
                     diff_count += 1
-            self.diff_only_tree.tag_configure("different", background="light yellow")
-        self.diff_only_count_label.config(text=f"값이 다른 항목: {diff_count}개")
+        
+        # 차이점 카운트 업데이트
+        if hasattr(self, 'diff_only_count_label'):
+            self.diff_only_count_label.config(text=f"값이 다른 항목: {diff_count}개")
 
     def create_report_tab(self):
         report_tab = ttk.Frame(self.comparison_notebook)
@@ -397,26 +549,277 @@ class DBManager:
             tab.destroy()
         # 탭 다시 생성
         self.create_comparison_tabs()
+        
+        # 격자뷰와 차이점뷰 업데이트
+        if hasattr(self, 'update_grid_view'):
+            self.update_grid_view()
+        if hasattr(self, 'update_diff_only_view'):
+            self.update_diff_only_view()
+        
+        # QC 보고서 뷰도 업데이트 (유지보수 모드인 경우)
+        if self.maint_mode and hasattr(self, 'update_qc_report_view'):
+            self.update_qc_report_view()
 
     def create_grid_view_tab(self):
+        """격자뷰 탭 생성 - 트리뷰 구조"""
         grid_frame = ttk.Frame(self.comparison_notebook)
-        self.comparison_notebook.add(grid_frame, text="📑 격자 뷰")
-        grid_frame.rowconfigure([0, 1, 2], weight=1)
-        grid_frame.columnconfigure([0, 1], weight=1)
-        def count_items(df, module=None, part=None):
-            if module is not None and part is not None:
-                return df[(df["Module"] == module) & (df["Part"] == part)]["ItemName"].nunique()
-            elif module is not None:
-                return df[df["Module"] == module]["ItemName"].nunique()
-            else:
-                return df["ItemName"].nunique()
+        self.comparison_notebook.add(grid_frame, text="📊 메인 비교")
+        
+        # 상단 정보 패널
+        info_frame = ttk.Frame(grid_frame)
+        info_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        # 통계 정보 라벨들
+        self.grid_total_label = ttk.Label(info_frame, text="총 파라미터: 0")
+        self.grid_total_label.pack(side=tk.LEFT, padx=10)
+        
+        self.grid_modules_label = ttk.Label(info_frame, text="모듈 수: 0")
+        self.grid_modules_label.pack(side=tk.LEFT, padx=10)
+        
+        self.grid_parts_label = ttk.Label(info_frame, text="파트 수: 0")
+        self.grid_parts_label.pack(side=tk.LEFT, padx=10)
+        
+        # 차이점 개수 라벨 추가
+        self.grid_diff_label = ttk.Label(info_frame, text="값이 다른 항목: 0", foreground="red")
+        self.grid_diff_label.pack(side=tk.RIGHT, padx=10)
+        
 
+        
+        # 메인 트리뷰 생성 (계층 구조)
+        self.grid_tree = ttk.Treeview(grid_frame, selectmode="extended")
+        
+        # 동적 컬럼 설정
+        if self.file_names:
+            columns = tuple(self.file_names)
+        else:
+            columns = ("값",)
+            
+        self.grid_tree["columns"] = columns
+        
+        # 첫 번째 컬럼 (트리 구조용)
+        self.grid_tree.heading("#0", text="구조", anchor="w")
+        self.grid_tree.column("#0", width=250, anchor="w")
+        
+        # 파일별 값 컬럼들
+        for col in columns:
+            self.grid_tree.heading(col, text=col, anchor="center")
+            self.grid_tree.column(col, width=150, anchor="center")
+        
+        # 스크롤바 추가
+        v_scroll = ttk.Scrollbar(grid_frame, orient="vertical", command=self.grid_tree.yview)
+        h_scroll = ttk.Scrollbar(grid_frame, orient="horizontal", command=self.grid_tree.xview)
+        self.grid_tree.configure(yscroll=v_scroll.set, xscroll=h_scroll.set)
+        
+        # 위젯 배치
+        v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+        self.grid_tree.pack(expand=True, fill=tk.BOTH)
+        
+        # 격자뷰 데이터 업데이트
+        self.update_grid_view()
+
+    def update_grid_view(self):
+        """격자뷰 데이터 업데이트 - 트리뷰 구조"""
+        if not hasattr(self, 'grid_tree'):
+            return
+            
+        # 기존 데이터 삭제
+        for item in self.grid_tree.get_children():
+            self.grid_tree.delete(item)
+        
+        if self.merged_df is None or self.merged_df.empty:
+            # 통계 정보 초기화
+            if hasattr(self, 'grid_total_label'):
+                self.grid_total_label.config(text="총 파라미터: 0개")
+                self.grid_modules_label.config(text="모듈 수: 0개") 
+                self.grid_parts_label.config(text="파트 수: 0개")
+            return
+        
+        # 동적 컬럼 업데이트
+        columns = tuple(self.file_names) if self.file_names else ("값",)
+        self.grid_tree["columns"] = columns
+        
+        # 컬럼 헤딩 업데이트
+        for col in columns:
+            self.grid_tree.heading(col, text=col, anchor="center")
+            self.grid_tree.column(col, width=150, anchor="center")
+        
+        # 계층별 스타일 태그 설정
+        # 모듈 레벨 - 가장 크고 굵게 (기본 파란색)
+        self.grid_tree.tag_configure("module", 
+                                    font=("Arial", 11, "bold"), 
+                                    background="#F5F5F5", 
+                                    foreground="#1565C0")
+        
+        # 모듈 레벨 - 차이 있음 (빨간색 강조)
+        self.grid_tree.tag_configure("module_diff", 
+                                    font=("Arial", 11, "bold"), 
+                                    background="#F5F5F5", 
+                                    foreground="#D32F2F")
+        
+        # 파트 레벨 - 중간 크기, 볼드
+        self.grid_tree.tag_configure("part", 
+                                    font=("Arial", 10, "bold"), 
+                                    background="#FAFAFA", 
+                                    foreground="#424242")
+        
+        # 파트 레벨 - 모든 값 동일 (초록색)
+        self.grid_tree.tag_configure("part_clean", 
+                                    font=("Arial", 10, "bold"), 
+                                    background="#FAFAFA", 
+                                    foreground="#2E7D32")
+        
+        # 파트 레벨 - 차이 있음 (빨간색 강조)
+        self.grid_tree.tag_configure("part_diff", 
+                                    font=("Arial", 10, "bold"), 
+                                    background="#FAFAFA", 
+                                    foreground="#D32F2F")
+        
+
+        
+        # 파라미터 레벨 - 기본 크기
+        self.grid_tree.tag_configure("parameter_same", 
+                                    font=("Arial", 9), 
+                                    background="white", 
+                                    foreground="black")
+        
+        # 차이점이 있는 파라미터 - 전체 목록 탭과 동일한 색상
+        self.grid_tree.tag_configure("parameter_different", 
+                                    font=("Arial", 9), 
+                                    background="#FFECB3", 
+                                    foreground="#E65100")
+        
+        # 계층 구조 데이터 구성
+        modules_data = {}
+        total_params = 0
+        diff_count = 0
+        
+        grouped = self.merged_df.groupby(["Module", "Part", "ItemName"])
+        
+        for (module, part, item_name), group in grouped:
+            if module not in modules_data:
+                modules_data[module] = {}
+            if part not in modules_data[module]:
+                modules_data[module][part] = {}
+            
+            # 각 파일별 값 수집
+            values = []
+            for model in self.file_names:
+                model_data = group[group["Model"] == model]
+                if not model_data.empty:
+                    values.append(str(model_data["ItemValue"].iloc[0]))
+                else:
+                    values.append("-")
+            
+            # 값 차이 확인 (빈 값 제외)
+            non_empty_values = [v for v in values if v != "-"]
+            has_difference = len(set(non_empty_values)) > 1 if len(non_empty_values) > 1 else False
+            
+            modules_data[module][part][item_name] = {
+                "values": values,
+                "has_difference": has_difference
+            }
+            total_params += 1
+            if has_difference:
+                diff_count += 1
+        
+        # 트리뷰에 계층 구조로 데이터 추가
+        for module_name in sorted(modules_data.keys()):
+            # 모듈 레벨 통계 계산
+            module_total = sum(len(modules_data[module_name][part]) for part in modules_data[module_name])
+            module_diff = sum(1 for part in modules_data[module_name] 
+                            for item in modules_data[module_name][part] 
+                            if modules_data[module_name][part][item]["has_difference"])
+            
+            # 모듈 표시 - 파란색 통일
+            if module_diff == 0:
+                module_text = f"📁 {module_name} ({module_total})"
+            else:
+                module_text = f"📁 {module_name} ({module_total}) Diff: {module_diff}"
+            module_tag = "module"
+            
+            # 모듈 노드 추가
+            module_node = self.grid_tree.insert("", "end", 
+                                               text=module_text, 
+                                               values=[""] * len(columns), 
+                                               open=True,
+                                               tags=(module_tag,))
+            
+            for part_name in sorted(modules_data[module_name].keys()):
+                # 파트 레벨 통계 계산
+                part_total = len(modules_data[module_name][part_name])
+                part_diff = sum(1 for item in modules_data[module_name][part_name] 
+                              if modules_data[module_name][part_name][item]["has_difference"])
+                
+                # 파트 표시 - 차이가 없으면 초록색, 있으면 회색
+                if part_diff == 0:
+                    part_text = f"📂 {part_name} ({part_total})"
+                    part_tag = "part_clean"
+                else:
+                    part_text = f"📂 {part_name} ({part_total}) Diff: {part_diff}"
+                    part_tag = "part_diff"
+                
+                # 파트 노드 추가
+                part_node = self.grid_tree.insert(module_node, "end", 
+                                                 text=part_text, 
+                                                 values=[""] * len(columns), 
+                                                 open=True,
+                                                 tags=(part_tag,))
+                
+                for item_name in sorted(modules_data[module_name][part_name].keys()):
+                    # 파라미터 노드 추가 - 기본 크기, 차이점에 따라 색상 구분
+                    item_data = modules_data[module_name][part_name][item_name]
+                    values = item_data["values"]
+                    has_difference = item_data["has_difference"]
+                    
+                    # 태그 선택
+                    tag = "parameter_different" if has_difference else "parameter_same"
+                    
+                    self.grid_tree.insert(part_node, "end", 
+                                        text=item_name, 
+                                        values=values, 
+                                        tags=(tag,))
+        
+        # 통계 정보 업데이트
+        if hasattr(self, 'grid_total_label'):
+            self.grid_total_label.config(text=f"총 파라미터: {total_params}")
+            self.grid_modules_label.config(text=f"모듈 수: {len(modules_data)}")
+            
+            total_parts = sum(len(parts) for parts in modules_data.values())
+            self.grid_parts_label.config(text=f"파트 수: {total_parts}")
+            
+            # 차이점 개수도 표시
+            if hasattr(self, 'grid_diff_label'):
+                self.grid_diff_label.config(text=f"값이 다른 항목: {diff_count}")
 
     def create_comparison_tab(self):
         comparison_frame = ttk.Frame(self.comparison_notebook)
-        self.comparison_notebook.add(comparison_frame, text="DB 값 비교")
+        self.comparison_notebook.add(comparison_frame, text="📋 전체 목록")
         style = ttk.Style()
         style.configure("Custom.Treeview", rowheight=22)
+        
+        # 상단 검색 및 제어 패널
+        top_frame = ttk.Frame(comparison_frame)
+        top_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        # 검색 기능 추가 (좌측)
+        search_frame = ttk.Frame(top_frame)
+        search_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        ttk.Label(search_frame, text="ItemName 검색:").pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=25)
+        self.search_entry.pack(side=tk.LEFT, padx=(0, 5))
+        self.search_entry.bind('<KeyRelease>', self.on_search_changed)
+        
+        self.search_clear_btn = ttk.Button(search_frame, text="지우기", command=self.clear_search, width=8)
+        self.search_clear_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # 검색 결과 정보
+        self.search_result_label = ttk.Label(search_frame, text="", foreground="blue")
+        self.search_result_label.pack(side=tk.LEFT, padx=(5, 0))
+        
         control_frame = ttk.Frame(comparison_frame)
         control_frame.pack(fill=tk.X, padx=5, pady=5)
         if self.maint_mode:
@@ -474,6 +877,96 @@ class DBManager:
             self.update_comparison_context_menu_state()
         self.update_comparison_view()
 
+    def add_to_default_db(self):
+        """선택된 항목을 Default DB에 추가합니다."""
+        if not self.maint_mode:
+            messagebox.showwarning("권한 없음", "이 기능은 유지보수 모드에서만 사용 가능합니다.")
+            return
+
+        # self.item_checkboxes 또는 self.comparison_tree.selection()에서 항목 가져오기
+        selected_items = []
+        if any(self.item_checkboxes.values()):
+            # 체크박스가 하나라도 선택된 경우
+            for item_key, is_checked in self.item_checkboxes.items():
+                if is_checked:
+                    # item_key에서 module, part, item_name 분리
+                    parts = item_key.split('_')
+                    module, part, item_name = parts[0], parts[1], '_'.join(parts[2:])
+                    
+                    # 트리뷰에서 해당 항목 찾기
+                    for child_id in self.comparison_tree.get_children():
+                        values = self.comparison_tree.item(child_id, 'values')
+                        if values[1] == module and values[2] == part and values[3] == item_name:
+                            selected_items.append(child_id)
+                            break
+        else:
+            # 체크박스가 선택되지 않은 경우, 트리뷰에서 직접 선택된 항목 사용
+            selected_items = self.comparison_tree.selection()
+
+        if not selected_items:
+            messagebox.showwarning("선택 필요", "Default DB에 추가할 항목을 먼저 선택해주세요.")
+            return
+
+        # 장비 유형 선택
+        equipment_types = self.db_schema.get_equipment_types()
+        if not equipment_types:
+            messagebox.showerror("오류", "등록된 장비 유형이 없습니다. 먼저 Default DB 관리 탭에서 장비 유형을 추가하세요.")
+            return
+        
+        type_names = [f"{name} (ID: {type_id})" for type_id, name, _ in equipment_types]
+        
+        # 선택 다이얼로그
+        dlg = tk.Toplevel(self.window)
+        dlg.title("장비 유형 선택")
+        dlg.geometry("300x200")
+        
+        ttk.Label(dlg, text="아래 목록에서 장비 유형을 선택하세요:").pack(pady=10)
+        
+        selected_type = tk.StringVar()
+        combo = ttk.Combobox(dlg, textvariable=selected_type, values=type_names, state="readonly")
+        combo.pack(pady=5)
+        combo.set(type_names[0])
+
+        def on_confirm():
+            type_id_str = selected_type.get().split("ID: ")[1][:-1]
+            type_id = int(type_id_str)
+            
+            # 실제 DB 추가 로직
+            count = 0
+            for item_id in selected_items:
+                item_values = self.comparison_tree.item(item_id, "values")
+                
+                # 유지보수 모드 여부에 따라 인덱스 조정
+                col_offset = 1 if self.maint_mode else 0
+                module, part, item_name = item_values[col_offset], item_values[col_offset+1], item_values[col_offset+2]
+                
+                # 첫 번째 파일의 값을 사용
+                value = item_values[col_offset+3] 
+                
+                param_name = f"{part}_{item_name}"
+                
+                try:
+                    self.db_schema.add_default_value(type_id, param_name, value, None, None, f"Added from {self.file_names[0]}")
+                    count += 1
+                except Exception as e:
+                    self.update_log(f"'{param_name}' 추가 실패: {e}")
+
+            messagebox.showinfo("완료", f"총 {count}개의 항목이 Default DB에 추가되었습니다.")
+            dlg.destroy()
+            self.update_comparison_view() # UI 갱신
+
+        ttk.Button(dlg, text="확인", command=on_confirm).pack(pady=10)
+
+    def on_search_changed(self, event=None):
+        """검색어 변경 시 필터링"""
+        search_text = self.search_var.get().lower().strip()
+        self.update_comparison_view(search_filter=search_text)
+    
+    def clear_search(self):
+        """검색 입력창 지우기"""
+        self.search_var.set("")
+        self.update_comparison_view(search_filter="")
+
     def toggle_select_all_checkboxes(self):
         if not self.maint_mode:
             return
@@ -488,20 +981,37 @@ class DBManager:
                 self.item_checkboxes[item_key] = check
         self.update_checked_count()
 
-    def update_comparison_view(self):
+    def update_comparison_view(self, search_filter=""):
         for item in self.comparison_tree.get_children():
             self.comparison_tree.delete(item)
+        
         saved_checkboxes = self.item_checkboxes.copy()
         self.item_checkboxes.clear()
+        
         if self.maint_mode:
             self.comparison_tree.bind("<ButtonRelease-1>", self.toggle_checkbox)
         else:
             self.comparison_tree.unbind("<ButtonRelease-1>")
+        
         diff_count = 0
+        total_items = 0
+        filtered_items = 0
+        
         if self.merged_df is not None:
+            # 파라미터별로 그룹화하여 비교
             grouped = self.merged_df.groupby(["Module", "Part", "ItemName"])
+            
             for (module, part, item_name), group in grouped:
+                total_items += 1
+                
+                # 검색 필터링 적용
+                if search_filter and search_filter not in item_name.lower():
+                    continue
+                
+                filtered_items += 1
+                
                 values = []
+                
                 if self.maint_mode:
                     checkbox_state = "☐"
                     item_key = f"{module}_{part}_{item_name}"
@@ -509,27 +1019,56 @@ class DBManager:
                         checkbox_state = "☑"
                     self.item_checkboxes[item_key] = (checkbox_state == "☑")
                     values.append(checkbox_state)
+                
                 values.extend([module, part, item_name])
+                
+                # 각 파일별 값 추출 및 비교
+                file_values = []
                 for model in self.file_names:
-                    model_value = group[group["Model"] == model]["ItemValue"].values
-                    value = model_value[0] if len(model_value) > 0 else "-"
-                    values.append(value)
+                    model_data = group[group["Model"] == model]
+                    if not model_data.empty:
+                        value = model_data["ItemValue"].iloc[0]
+                        file_values.append(str(value))
+                    else:
+                        file_values.append("-")
+                
+                values.extend(file_values)
+                
+                # 차이점 검사 - 모든 값이 동일한지 확인
+                unique_values = set(v for v in file_values if v != "-")
+                has_difference = len(unique_values) > 1
+                
                 tags = []
-                model_values = values[(4 if self.maint_mode else 3):]
-                if len(set(model_values)) > 1:
+                if has_difference:
                     tags.append("different")
                     diff_count += 1
+                
+                # Default DB에 존재하는지 확인
                 is_existing = self.check_if_parameter_exists(module, part, item_name)
                 if is_existing:
                     tags.append("existing")
+                
                 self.comparison_tree.insert("", "end", values=values, tags=tuple(tags))
-            self.comparison_tree.tag_configure("different", background="light yellow")
-            self.comparison_tree.tag_configure("existing", foreground="blue")
+            
+            # 스타일 설정
+            self.comparison_tree.tag_configure("different", background="#FFECB3", foreground="#E65100")
+            self.comparison_tree.tag_configure("existing", foreground="#1976D2")
+            
             if self.maint_mode:
                 self.comparison_tree.bind("<ButtonRelease-1>", self.toggle_checkbox)
+            
             self.update_selected_count(None)
+        
+        # 차이점 카운트 업데이트
         if not self.maint_mode and hasattr(self, 'diff_count_label'):
             self.diff_count_label.config(text=f"값이 다른 항목: {diff_count}개")
+        
+        # 검색 결과 표시 업데이트
+        if hasattr(self, 'search_result_label'):
+            if search_filter:
+                self.search_result_label.config(text=f"검색 결과: {filtered_items}개 (전체: {total_items}개)")
+            else:
+                self.search_result_label.config(text="")
 
     def create_comparison_context_menu(self):
         self.comparison_context_menu = tk.Menu(self.window, tearoff=0)
@@ -610,3 +1149,70 @@ class DBManager:
         except Exception as e:
             self.update_log(f"DB_ItemName 존재 여부 확인 중 오류: {str(e)}")
             return False
+
+    def disable_maint_features(self):
+        """유지보수 모드 비활성화 시 관련 기능들을 비활성화합니다."""
+        # 메인 노트북의 탭들 비활성화
+        if hasattr(self, 'main_notebook'):
+            for tab_id in range(self.main_notebook.index('end')):
+                tab_text = self.main_notebook.tab(tab_id, 'text')
+                if tab_text in ["Default DB 관리", "QC 검수", "변경 이력 관리"]:
+                    self.main_notebook.tab(tab_id, state='disabled')
+        
+        # 버튼들 비활성화
+        for widget_name in ['add_equipment_button', 'add_parameter_button', 'edit_button', 'delete_button']:
+            if hasattr(self, widget_name) and getattr(self, widget_name):
+                getattr(self, widget_name).config(state='disabled')
+        
+        # 트리뷰 더블클릭 이벤트 제거
+        if hasattr(self, 'equipment_tree'):
+            self.equipment_tree.unbind('<Double-1>')
+
+    def create_qc_check_tab(self):
+        """QC 검수 탭 생성"""
+        qc_frame = ttk.Frame(self.main_notebook)
+        self.main_notebook.add(qc_frame, text="QC 검수", state="disabled")
+        
+        # QC 탭 내부에 노트북 생성
+        self.qc_notebook = ttk.Notebook(qc_frame)
+        self.qc_notebook.pack(expand=True, fill=tk.BOTH, padx=5, pady=5)
+        
+        # 기본 QC 검수 탭
+        basic_qc_tab = ttk.Frame(self.qc_notebook)
+        self.qc_notebook.add(basic_qc_tab, text="기본 검수")
+        
+        # 기본 QC 검수 내용
+        info_label = ttk.Label(basic_qc_tab, 
+                              text="QC 검수 기능\n\n여기서 파라미터 값들의 품질을 검수할 수 있습니다.\n유지보수 모드에서 추가 기능들이 활성화됩니다.",
+                              justify="center")
+        info_label.pack(expand=True)
+        
+        # QC 검수 트리뷰 (기본)
+        qc_tree_frame, self.qc_tree = create_treeview_with_scrollbar(
+            basic_qc_tab,
+            columns=("parameter", "value", "status", "note"),
+            headings={"parameter": "파라미터", "value": "값", "status": "상태", "note": "비고"},
+            column_widths={"parameter": 200, "value": 150, "status": 80, "note": 200},
+            height=15
+        )
+        qc_tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    def create_default_db_tab(self):
+        """Default DB 관리 탭 생성"""
+        default_db_frame = ttk.Frame(self.main_notebook)
+        self.main_notebook.add(default_db_frame, text="Default DB 관리", state="disabled")
+        
+        info_label = ttk.Label(default_db_frame, 
+                              text="Default DB 관리 기능\n\n기본 파라미터 값들을 관리할 수 있습니다.",
+                              justify="center")
+        info_label.pack(expand=True)
+
+    def create_change_history_tab(self):
+        """변경 이력 관리 탭 생성"""
+        history_frame = ttk.Frame(self.main_notebook)
+        self.main_notebook.add(history_frame, text="변경 이력 관리", state="disabled")
+        
+        info_label = ttk.Label(history_frame, 
+                              text="변경 이력 관리 기능\n\n파라미터 변경 이력을 추적할 수 있습니다.",
+                              justify="center")
+        info_label.pack(expand=True)

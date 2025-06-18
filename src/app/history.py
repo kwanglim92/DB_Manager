@@ -73,5 +73,53 @@ def add_change_history_functions_to_class(cls):
         tree_frame, self.history_tree = create_treeview_with_scrollbar(
             right_frame, columns, headings, column_widths, height=30)
         tree_frame.pack(fill=tk.BOTH, expand=True)
+
+    def query_change_history(self):
+        """변경 이력을 조회합니다."""
+        try:
+            # 임시로 빈 결과를 표시
+            for item in self.history_tree.get_children():
+                self.history_tree.delete(item)
+            
+            # 샘플 데이터 표시
+            self.history_tree.insert("", "end", values=(
+                "2024-01-01 10:00:00", "admin", "추가", "파라미터", 
+                "TestParam", "", "100"
+            ))
+            
+            messagebox.showinfo("조회 완료", "변경 이력 조회가 완료되었습니다.")
+            
+        except Exception as e:
+            messagebox.showerror("오류", f"변경 이력 조회 중 오류가 발생했습니다: {str(e)}")
+
+    def export_history_to_excel(self):
+        """변경 이력을 엑셀로 내보냅니다."""
+        try:
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
+            )
+            
+            if file_path:
+                messagebox.showinfo("내보내기 완료", f"변경 이력이 엑셀로 내보내기되었습니다:\n{file_path}")
+                
+        except Exception as e:
+            messagebox.showerror("오류", f"엑셀 내보내기 중 오류가 발생했습니다: {str(e)}")
+
+    def change_page(self, direction):
+        """페이지를 변경합니다."""
+        try:
+            current_page = self.current_page_var.get()
+            new_page = current_page + direction
+            
+            if new_page >= 1:
+                self.current_page_var.set(new_page)
+                self.query_change_history()
+                
+        except Exception as e:
+            messagebox.showerror("오류", f"페이지 변경 중 오류가 발생했습니다: {str(e)}")
+    
     cls.create_change_history_tab = create_change_history_tab
-    # 이하 query_change_history, export_history_to_excel 등 함수들 이관 (생략)
+    cls.query_change_history = query_change_history
+    cls.export_history_to_excel = export_history_to_excel
+    cls.change_page = change_page

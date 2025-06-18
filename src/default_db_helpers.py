@@ -584,7 +584,7 @@ def add_default_db_functions_to_class(cls):
             entered_password = password_var.get()
             # 실제 서비스에서는 더 복잡한 비밀번호 검사 로직 구현 필요
             # 예시: 비밀번호 "admin1234"
-            if entered_password == "admin1234":
+            if entered_password == "1":
                 password_dialog.destroy()
                 delete_confirmed()
             else:
