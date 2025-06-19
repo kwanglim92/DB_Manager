@@ -11,14 +11,35 @@ from app.defaultdb import add_default_db_functions_to_class
 from app.history import add_change_history_functions_to_class
 from app.utils import create_treeview_with_scrollbar, create_label_entry_pair, format_num_value
 
+# 🆕 새로운 설정 시스템 (선택적 사용)
+try:
+    from app.core.config import AppConfig
+    from app.utils.path_utils import PathManager
+    from app.utils.validation import ValidationUtils
+    USE_NEW_CONFIG = True
+except ImportError:
+    USE_NEW_CONFIG = False
+
 class DBManager:
     def __init__(self):
+        # 🆕 새로운 설정 시스템 사용 (기존 코드 유지)
+        if USE_NEW_CONFIG:
+            self.config = AppConfig()
+            self.path_manager = PathManager()
+            self.validator = ValidationUtils()
+        
         self.maint_mode = False
         self.selected_equipment_type_id = None
         self.file_names = []
         self.folder_path = ""
         self.merged_df = None
         self.context_menu = None
+        
+        # QC 엔지니어용 탭 프레임들을 저장할 변수들
+        self.qc_check_frame = None
+        self.default_db_frame = None  
+        self.change_history_frame = None
+        
         try:
             self.db_schema = DBSchema()
         except Exception as e:
@@ -27,6 +48,45 @@ class DBManager:
         add_qc_check_functions_to_class(DBManager)
         add_default_db_functions_to_class(DBManager)
         add_change_history_functions_to_class(DBManager)
+        
+        # 🆕 아이콘 로드 개선 (기존 코드와 호환)
+        if USE_NEW_CONFIG:
+            self._setup_window_with_new_config()
+        else:
+            self._setup_window_legacy()
+        
+        # 바인딩 설정
+        for key in ('<Control-o>', '<Control-O>'):
+            self.window.bind(key, self.load_folder)
+        self.window.bind('<F1>', self.show_user_guide)
+        
+        self.status_bar.config(text="Ready")
+        self.update_log("DB Manager 초기화 완료 - 장비 생산 엔지니어 모드")
+        if self.db_schema:
+            self.update_log("로컬 데이터베이스 초기화 완료")
+        else:
+            self.update_log("DB 스키마 초기화 실패")
+        
+        # 기본적으로는 장비 생산 엔지니어용 탭만 생성
+        self.create_comparison_tabs()
+
+    def _setup_window_with_new_config(self):
+        """새로운 설정 시스템을 사용한 윈도우 설정"""
+        self.window = tk.Tk()
+        self.window.title(self.config.app_name)
+        self.window.geometry(self.config.window_geometry)
+        
+        try:
+            icon_path = self.config.icon_path
+            if icon_path.exists():
+                self.window.iconbitmap(str(icon_path))
+        except Exception as e:
+            print(f"아이콘 로드 실패: {str(e)}")
+        
+        self._setup_common_ui()
+    
+    def _setup_window_legacy(self):
+        """기존 방식의 윈도우 설정 (fallback)"""
         self.window = tk.Tk()
         self.window.title("DB Manager")
         self.window.geometry("1300x800")
@@ -40,6 +100,11 @@ class DBManager:
             self.window.iconbitmap(icon_path)
         except Exception as e:
             print(f"아이콘 로드 실패: {str(e)}")
+        
+        self._setup_common_ui()
+    
+    def _setup_common_ui(self):
+        """공통 UI 요소들을 설정합니다."""
         self.create_menu()
         self.status_bar = ttk.Label(self.window, relief=tk.SUNKEN, anchor=tk.W)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
@@ -52,15 +117,6 @@ class DBManager:
         log_scrollbar = ttk.Scrollbar(self.log_text, orient="vertical", command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=log_scrollbar.set)
         log_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.window.bind('<F1>', self.show_user_guide)
-        
-        # 탭 생성 호출을 __init__의 마지막으로 이동
-        self.create_comparison_tabs()
-        
-        # 유지보수 모드 탭들 미리 생성 (비활성화 상태)
-        self.create_qc_check_tab()
-        self.create_default_db_tab()
-        self.create_change_history_tab()
 
     def show_about(self):
         """프로그램 정보 다이얼로그 표시"""
@@ -78,20 +134,12 @@ class DBManager:
             "• 유지보수 모드: 도구 > Maintenance Mode (비밀번호 필요)\n"
             "• Default DB 관리, QC 검수, 변경 이력 등은 유지보수 모드에서만 사용 가능\n"
             "• 각 탭에서 우클릭 및 버튼으로 항목 추가/삭제/내보내기 등 다양한 작업 지원\n"
-            "• 문의: github.com/kwanglim92/DB_Manager\n"
+            "• 문의: github.com/kwanglim92/DB_Manager\n\n"
+            "= 사용자 역할 =\n"
+            "• 장비 생산 엔지니어: DB 비교 기능 사용\n"
+            "• QC 엔지니어: Maintenance Mode로 모든 기능 사용"
         )
         messagebox.showinfo("사용 설명서", guide_text)
-
-        for key in ('<Control-o>', '<Control-O>'):
-            self.window.bind(key, self.load_folder)
-        
-        self.status_bar.config(text="Ready")
-        self.update_log("DB Manager 초기화 완료")
-        if self.db_schema:
-            self.update_log("로컬 데이터베이스 초기화 완료")
-            self.update_log("Default DB 관리 기능 준비 완료")
-        else:
-            self.update_log("DB 스키마 초기화 실패")
 
     def create_menu(self):
         """메뉴바를 생성합니다."""
@@ -128,32 +176,20 @@ class DBManager:
     def toggle_maint_mode(self):
         """유지보수 모드 토글"""
         if self.maint_mode:
-            self.update_log("유지보수 모드가 비활성화되었습니다.")
+            self.update_log("유지보수 모드가 비활성화되었습니다. (장비 생산 엔지니어 모드)")
             self.maint_mode = False
-            self.status_bar.config(text="유지보수 모드 비활성화")
+            self.status_bar.config(text="장비 생산 엔지니어 모드")
             self.disable_maint_features()
         else:
-            password = simpledialog.askstring("유지보수 모드", "비밀번호를 입력하세요:", show="*")
+            password = simpledialog.askstring("유지보수 모드", "QC 엔지니어 비밀번호를 입력하세요:", show="*")
             if password is None:
                 return
             from app.utils import verify_password
             if verify_password(password):
-                loading_dialog = LoadingDialog(self.window)
-                loading_dialog.update_progress(10, "유지보수 모드 활성화 중...")
-                self.maint_mode = True
-                self.status_bar.config(text="유지보수 모드 활성화")
-                self.update_log("유지보수 모드가 활성화되었습니다.")
-                try:
-                    loading_dialog.update_progress(30, "기본 DB 관리 기능 초기화 중...")
-                    self.enable_maint_features()
-                    loading_dialog.update_progress(100, "완료")
-                    loading_dialog.close()
-                except Exception as e:
-                    loading_dialog.close()
-                    messagebox.showerror("오류", f"유지보수 모드 활성화 중 오류 발생: {str(e)}")
+                self.enable_maint_features()
             else:
                 messagebox.showerror("오류", "비밀번호가 일치하지 않습니다.")
-            return
+        
         self.update_default_db_ui_state()
 
     def show_change_password_dialog(self):
@@ -200,41 +236,33 @@ class DBManager:
                 self.update_all_tabs()
 
     def enable_maint_features(self):
-        """유지보수 모드 활성화 시 필요한 기능을 활성화합니다. (최적화: 모든 무거운 작업을 스레드로 분리)"""
+        """유지보수 모드 활성화 - QC 엔지니어용 탭들을 추가합니다."""
         import threading
         loading_dialog = LoadingDialog(self.window)
+        
         def worker():
             try:
-                if hasattr(self, 'notebook') and self.notebook:
-                    for tab_id in range(self.notebook.index('end')):
-                        if self.notebook.tab(tab_id, 'text') in ["Default DB 관리", "QC 검수", "변경 이력 관리"]:
-                            self.window.after(0, lambda tab_id=tab_id: self.notebook.tab(tab_id, state='normal'))
-                for widget_name in ['add_equipment_button', 'add_parameter_button', 'edit_button', 'delete_button']:
-                    if hasattr(self, widget_name) and getattr(self, widget_name):
-                        self.window.after(0, lambda wn=widget_name: getattr(self, wn).config(state='normal'))
-                if hasattr(self, 'equipment_tree'):
-                    self.window.after(0, lambda: self.equipment_tree.bind('<Double-1>', self.on_tree_double_click))
-                loading_dialog.update_progress(10, "QC 탭 생성 중...")
-                if hasattr(self, 'create_qc_check_tab'):
-                    self.create_qc_check_tab()
-                elif hasattr(self, 'create_qc_tab'):
-                    self.create_qc_tab()
-                    
-                # QC 탭에 고급 기능들 추가
-                loading_dialog.update_progress(25, "QC 고급 기능 추가 중...")
-                self.window.after(0, self.create_qc_tabs_with_advanced_features)
-                    
-                loading_dialog.update_progress(40, "Default DB 관리 탭 생성 중...")
-                if hasattr(self, 'create_default_db_tab'):
-                    self.create_default_db_tab()
-                loading_dialog.update_progress(70, "변경 이력 관리 탭 생성 중...")
-                if hasattr(self, 'create_change_history_tab'):
-                    self.create_change_history_tab()
+                self.maint_mode = True
+                
+                loading_dialog.update_progress(20, "QC 검수 탭 생성 중...")
+                self.window.after(0, self.create_qc_check_tab)
+                
+                loading_dialog.update_progress(50, "Default DB 관리 탭 생성 중...")
+                self.window.after(0, self.create_default_db_tab)
+                
+                loading_dialog.update_progress(80, "변경 이력 관리 탭 생성 중...")
+                self.window.after(0, self.create_change_history_tab)
+                
                 loading_dialog.update_progress(100, "완료")
-                self.window.after(0, loading_dialog.close)
+                self.window.after(100, loading_dialog.close)
+                
+                self.window.after(200, lambda: self.update_log("QC 엔지니어 모드가 활성화되었습니다."))
+                self.window.after(200, lambda: self.status_bar.config(text="QC 엔지니어 모드"))
+                
             except Exception as e:
                 self.window.after(0, loading_dialog.close)
                 self.window.after(0, lambda: messagebox.showerror("오류", f"유지보수 모드 활성화 중 오류 발생: {str(e)}"))
+        
         threading.Thread(target=worker, daemon=True).start()
 
     def create_comparison_tabs(self):
@@ -1151,30 +1179,38 @@ class DBManager:
             return False
 
     def disable_maint_features(self):
-        """유지보수 모드 비활성화 시 관련 기능들을 비활성화합니다."""
-        # 메인 노트북의 탭들 비활성화
+        """유지보수 모드 비활성화 - QC 엔지니어용 탭들을 제거합니다."""
+        # QC 엔지니어용 탭들 제거
         if hasattr(self, 'main_notebook'):
+            tabs_to_remove = []
             for tab_id in range(self.main_notebook.index('end')):
                 tab_text = self.main_notebook.tab(tab_id, 'text')
                 if tab_text in ["Default DB 관리", "QC 검수", "변경 이력 관리"]:
-                    self.main_notebook.tab(tab_id, state='disabled')
+                    tabs_to_remove.append(tab_id)
+            
+            # 역순으로 제거 (인덱스 변경 방지)
+            for tab_id in reversed(tabs_to_remove):
+                self.main_notebook.forget(tab_id)
         
-        # 버튼들 비활성화
-        for widget_name in ['add_equipment_button', 'add_parameter_button', 'edit_button', 'delete_button']:
-            if hasattr(self, widget_name) and getattr(self, widget_name):
-                getattr(self, widget_name).config(state='disabled')
+        # QC 엔지니어용 탭 프레임 참조 제거
+        self.qc_check_frame = None
+        self.default_db_frame = None
+        self.change_history_frame = None
         
-        # 트리뷰 더블클릭 이벤트 제거
-        if hasattr(self, 'equipment_tree'):
-            self.equipment_tree.unbind('<Double-1>')
+        # QC 노트북 참조 제거
+        if hasattr(self, 'qc_notebook'):
+            del self.qc_notebook
 
     def create_qc_check_tab(self):
         """QC 검수 탭 생성"""
-        qc_frame = ttk.Frame(self.main_notebook)
-        self.main_notebook.add(qc_frame, text="QC 검수", state="disabled")
+        if self.qc_check_frame is not None:
+            return  # 이미 생성된 경우 중복 생성 방지
+            
+        self.qc_check_frame = ttk.Frame(self.main_notebook)
+        self.main_notebook.add(self.qc_check_frame, text="QC 검수")
         
         # QC 탭 내부에 노트북 생성
-        self.qc_notebook = ttk.Notebook(qc_frame)
+        self.qc_notebook = ttk.Notebook(self.qc_check_frame)
         self.qc_notebook.pack(expand=True, fill=tk.BOTH, padx=5, pady=5)
         
         # 기본 QC 검수 탭
@@ -1183,7 +1219,7 @@ class DBManager:
         
         # 기본 QC 검수 내용
         info_label = ttk.Label(basic_qc_tab, 
-                              text="QC 검수 기능\n\n여기서 파라미터 값들의 품질을 검수할 수 있습니다.\n유지보수 모드에서 추가 기능들이 활성화됩니다.",
+                              text="QC 검수 기능\n\n파라미터 값들의 품질을 검수할 수 있습니다.\nQC 엔지니어 전용 기능입니다.",
                               justify="center")
         info_label.pack(expand=True)
         
@@ -1196,23 +1232,32 @@ class DBManager:
             height=15
         )
         qc_tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # QC 탭에 고급 기능들 추가
+        self.create_qc_tabs_with_advanced_features()
 
     def create_default_db_tab(self):
         """Default DB 관리 탭 생성"""
-        default_db_frame = ttk.Frame(self.main_notebook)
-        self.main_notebook.add(default_db_frame, text="Default DB 관리", state="disabled")
+        if self.default_db_frame is not None:
+            return  # 이미 생성된 경우 중복 생성 방지
+            
+        self.default_db_frame = ttk.Frame(self.main_notebook)
+        self.main_notebook.add(self.default_db_frame, text="Default DB 관리")
         
-        info_label = ttk.Label(default_db_frame, 
-                              text="Default DB 관리 기능\n\n기본 파라미터 값들을 관리할 수 있습니다.",
+        info_label = ttk.Label(self.default_db_frame, 
+                              text="Default DB 관리 기능\n\n기본 파라미터 값들을 관리할 수 있습니다.\nQC 엔지니어 전용 기능입니다.",
                               justify="center")
         info_label.pack(expand=True)
 
     def create_change_history_tab(self):
         """변경 이력 관리 탭 생성"""
-        history_frame = ttk.Frame(self.main_notebook)
-        self.main_notebook.add(history_frame, text="변경 이력 관리", state="disabled")
+        if self.change_history_frame is not None:
+            return  # 이미 생성된 경우 중복 생성 방지
+            
+        self.change_history_frame = ttk.Frame(self.main_notebook)
+        self.main_notebook.add(self.change_history_frame, text="변경 이력 관리")
         
-        info_label = ttk.Label(history_frame, 
-                              text="변경 이력 관리 기능\n\n파라미터 변경 이력을 추적할 수 있습니다.",
+        info_label = ttk.Label(self.change_history_frame, 
+                              text="변경 이력 관리 기능\n\n파라미터 변경 이력을 추적할 수 있습니다.\nQC 엔지니어 전용 기능입니다.",
                               justify="center")
         info_label.pack(expand=True)
