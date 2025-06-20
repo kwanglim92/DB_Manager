@@ -1,0 +1,10 @@
+Module	Part	ItemName	ItemType	ItemValue	ItemDescription
+DSP	Cantilever	ApproachSetPointLeft	double	0.6	This is a ApproachSetPointLeft Description
+DSP	Cantilever	ApproachSetPointRatio	double	0.6	This is a ApproachSetPointRatio Description
+DSP	Cantilever	Amplitude	double	1	This is a Amplitude Description
+DSP	Cantilever	AmplitudeThreshold	double	0.93	This is a AmplitudeThreshold Description
+DSP	Info	LaserOnWaitTime	double	1000	This is a LaserOnWaitTime Description
+DSP	Info	DSPCode	string	dsp64.bin	DSP code
+DSP	Info	DSPComm	string	TCP	DSP communication method
+DSP	Error	0	int	5	[Spm] : Unknown spm command
+DSP	Error	1	int	5	[Spm] : Can't excute ScanOn while imaging 

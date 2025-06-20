@@ -66,7 +66,7 @@ def add_default_db_functions_to_class(cls):
             "module": "Module", 
             "part": "Part", 
             "itemname": "ItemName", 
-            "default": "기본값", 
+            "default": "설정값", 
             "min": "최소값", 
             "max": "최대값"
         }
@@ -145,7 +145,7 @@ def add_default_db_functions_to_class(cls):
         columns = ("parameter", "default", "min", "max")
         headings = {
             "parameter": "파라미터", 
-            "default": "기본값", 
+            "default": "설정값", 
             "min": "최소값", 
             "max": "최대값"
         }
@@ -176,7 +176,7 @@ def add_default_db_functions_to_class(cls):
         ttk.Entry(form_frame, textvariable=self.param_name_var, width=25).grid(row=row, column=1, sticky=tk.W, padx=5, pady=2)
         
         row += 1
-        ttk.Label(form_frame, text="기본값:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(form_frame, text="설정값:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
         self.default_value_var = tk.StringVar()
         ttk.Entry(form_frame, textvariable=self.default_value_var, width=25).grid(row=row, column=1, sticky=tk.W, padx=5, pady=2)
         

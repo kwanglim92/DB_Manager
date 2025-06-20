@@ -8,6 +8,51 @@ import pandas as pd
 import numpy as np
 from app.utils import create_treeview_with_scrollbar, create_label_entry_pair, format_num_value
 from app.loading import LoadingDialog
+from app.text_file_handler import TextFileHandler
+
+def center_dialog_on_parent(dialog, parent):
+    """
+    다이얼로그를 부모 창 중앙에 위치시킵니다.
+    
+    Args:
+        dialog: 위치를 조정할 다이얼로그 윈도우
+        parent: 부모 윈도우
+    """
+    # 다이얼로그와 부모 창의 크기 정보 업데이트
+    dialog.update_idletasks()
+    parent.update_idletasks()
+    
+    # 부모 창의 위치와 크기
+    parent_x = parent.winfo_x()
+    parent_y = parent.winfo_y()
+    parent_width = parent.winfo_width()
+    parent_height = parent.winfo_height()
+    
+    # 다이얼로그의 크기
+    dialog_width = dialog.winfo_reqwidth()
+    dialog_height = dialog.winfo_reqheight()
+    
+    # 중앙 위치 계산
+    x = parent_x + (parent_width - dialog_width) // 2
+    y = parent_y + (parent_height - dialog_height) // 2
+    
+    # 화면 경계 확인 및 조정
+    screen_width = dialog.winfo_screenwidth()
+    screen_height = dialog.winfo_screenheight()
+    
+    # 화면 밖으로 나가지 않도록 조정
+    if x < 0:
+        x = 0
+    elif x + dialog_width > screen_width:
+        x = screen_width - dialog_width
+        
+    if y < 0:
+        y = 0
+    elif y + dialog_height > screen_height:
+        y = screen_height - dialog_height
+    
+    # 다이얼로그 위치 설정
+    dialog.geometry(f"+{x}+{y}")
 
 def add_default_db_functions_to_class(cls):
     """
@@ -62,16 +107,32 @@ def add_default_db_functions_to_class(cls):
             command=self.delete_parameter
         ).pack(side=tk.LEFT, padx=5)
 
-        # 임포트/익스포트 버튼
+        # 임포트/익스포트 버튼 (텍스트 파일 우선)
         ttk.Button(
             button_frame, 
-            text="Excel에서 임포트", 
-            command=self.import_from_excel
+            text="텍스트 파일에서 가져오기", 
+            command=self.import_from_text_file
         ).pack(side=tk.LEFT, padx=5)
 
         ttk.Button(
             button_frame, 
-            text="Excel로 익스포트", 
+            text="텍스트 파일로 내보내기", 
+            command=self.export_to_text_file
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Excel 기능은 두 번째 줄에 배치
+        excel_button_frame = ttk.Frame(top_frame)
+        excel_button_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Button(
+            excel_button_frame, 
+            text="Excel에서 가져오기", 
+            command=self.import_from_excel
+        ).pack(side=tk.LEFT, padx=5)
+
+        ttk.Button(
+            excel_button_frame, 
+            text="Excel로 내보내기", 
             command=self.export_to_excel
         ).pack(side=tk.LEFT, padx=5)
 
@@ -79,21 +140,25 @@ def add_default_db_functions_to_class(cls):
         middle_frame = ttk.LabelFrame(default_db_tab, text="파라미터 목록", padding=10)
         middle_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # 트리뷰 생성
-        columns = ("name", "min_value", "max_value", "unit", "description")
+        # 트리뷰 생성 (Module, Part 컬럼 추가)
+        columns = ("parameter_name", "module_name", "part_name", "min_spec", "max_spec", "default_value", "description")
         headings = {
-            "name": "파라미터명", 
-            "min_value": "최소값", 
-            "max_value": "최대값", 
-            "unit": "단위", 
+            "parameter_name": "파라미터명", 
+            "module_name": "Module",
+            "part_name": "Part",
+            "min_spec": "최소값", 
+            "max_spec": "최대값", 
+            "default_value": "설정값",
             "description": "설명"
         }
         column_widths = {
-            "name": 200, 
-            "min_value": 100, 
-            "max_value": 100, 
-            "unit": 80, 
-            "description": 300
+            "parameter_name": 200, 
+            "module_name": 80,
+            "part_name": 100,
+            "min_spec": 80, 
+            "max_spec": 80, 
+            "default_value": 100,
+            "description": 200
         }
 
         param_tree_frame, self.param_tree = create_treeview_with_scrollbar(
@@ -107,6 +172,7 @@ def add_default_db_functions_to_class(cls):
 
         # 트리뷰 이벤트 바인딩
         self.param_tree.bind("<Double-1>", lambda e: self.edit_parameter())
+        self.param_tree.bind("<<TreeviewSelect>>", self.on_parameter_selected)
 
         # 하단 프레임: 파라미터 상세 정보
         bottom_frame = ttk.LabelFrame(default_db_tab, text="파라미터 상세 정보", padding=10)
@@ -119,25 +185,36 @@ def add_default_db_functions_to_class(cls):
         # 선택한 파라미터 정보 표시 라벨
         self.param_detail_labels = {}
         detail_fields = [
-            ("name", "파라미터명"), 
-            ("min_value", "최소값"), 
-            ("max_value", "최대값"), 
-            ("unit", "단위"), 
+            ("parameter_name", "파라미터명"), 
+            ("module_name", "Module"),
+            ("part_name", "Part"),
+            ("min_spec", "최소값"), 
+            ("max_spec", "최대값"), 
+            ("default_value", "설정값"),
             ("description", "설명"),
+            ("item_type", "데이터 타입"),
             ("created_at", "생성일시"),
             ("updated_at", "수정일시")
         ]
 
         for i, (field, label) in enumerate(detail_fields):
-            ttk.Label(detail_frame, text=f"{label}:", width=10, anchor="e").grid(
+            ttk.Label(detail_frame, text=f"{label}:", width=12, anchor="e").grid(
                 row=i//3, column=(i%3)*2, padx=5, pady=5, sticky="e"
             )
             detail_label = ttk.Label(detail_frame, text="", width=20, anchor="w")
             detail_label.grid(row=i//3, column=(i%3)*2+1, padx=5, pady=5, sticky="w")
             self.param_detail_labels[field] = detail_label
 
+        # 텍스트 파일 핸들러 초기화
+        self.text_file_handler = None
+
         # 장비 유형 목록 로드
         self.load_equipment_types()
+
+    def initialize_text_file_handler(self):
+        """텍스트 파일 핸들러를 초기화합니다."""
+        if self.text_file_handler is None:
+            self.text_file_handler = TextFileHandler(self.db_schema)
 
     def load_equipment_types(self):
         """장비 유형 목록 로드"""
@@ -146,7 +223,7 @@ def add_default_db_functions_to_class(cls):
             cursor = conn.cursor()
 
             # 장비 유형 정보 조회
-            cursor.execute("SELECT id, name FROM equipment_types ORDER BY name")
+            cursor.execute("SELECT id, type_name FROM Equipment_Types ORDER BY type_name")
             equipment_types = cursor.fetchall()
 
             # 콤보박스 업데이트
@@ -184,30 +261,42 @@ def add_default_db_functions_to_class(cls):
             for label in self.param_detail_labels.values():
                 label.config(text="")
 
-            # 선택된 장비 유형의 파라미터 로드
+            # 선택된 장비 유형의 파라미터 로드 (Module, Part 정보 포함)
             conn = self.get_db_connection()
             cursor = conn.cursor()
 
             query = """
-            SELECT id, name, min_value, max_value, unit, description, created_at, updated_at 
-            FROM parameters 
+            SELECT id, parameter_name, min_spec, max_spec, default_value, description, 
+                   created_at, updated_at, module_name, part_name, item_type
+            FROM Default_DB_Values 
             WHERE equipment_type_id = ? 
-            ORDER BY name
+            ORDER BY parameter_name
             """
             cursor.execute(query, (self.selected_equipment_type_id,))
             parameters = cursor.fetchall()
 
-            # 파라미터 목록 표시
+            # 파라미터 목록 표시 (Module, Part 컬럼 포함)
             for param in parameters:
-                param_id, name, min_value, max_value, unit, description, created_at, updated_at = param
+                (param_id, name, min_value, max_value, default_value, description, 
+                 created_at, updated_at, module_name, part_name, item_type) = param
+                
                 # 숫자 값 포맷팅
                 min_val_fmt = format_num_value(min_value) if min_value is not None else ""
                 max_val_fmt = format_num_value(max_value) if max_value is not None else ""
+                default_val_fmt = format_num_value(default_value) if default_value is not None else ""
 
                 self.param_tree.insert(
                     "", "end", 
                     iid=param_id,
-                    values=(name, min_val_fmt, max_val_fmt, unit, description)
+                    values=(
+                        name, 
+                        module_name or "", 
+                        part_name or "", 
+                        min_val_fmt, 
+                        max_val_fmt, 
+                        default_val_fmt, 
+                        description or ""
+                    )
                 )
 
             conn.close()
@@ -216,6 +305,52 @@ def add_default_db_functions_to_class(cls):
         except Exception as e:
             messagebox.showerror("오류", f"파라미터 로드 중 오류 발생: {str(e)}")
 
+    def on_parameter_selected(self, event):
+        """파라미터 선택 시 상세 정보 표시"""
+        selected_items = self.param_tree.selection()
+        if not selected_items:
+            # 선택 해제 시 상세 정보 초기화
+            for label in self.param_detail_labels.values():
+                label.config(text="")
+            return
+
+        try:
+            param_id = selected_items[0]
+            
+            # DB에서 상세 정보 조회
+            conn = self.get_db_connection()
+            cursor = conn.cursor()
+
+            query = """
+            SELECT parameter_name, min_spec, max_spec, default_value, description, 
+                   created_at, updated_at, module_name, part_name, item_type
+            FROM Default_DB_Values 
+            WHERE id = ?
+            """
+            cursor.execute(query, (param_id,))
+            param_detail = cursor.fetchone()
+
+            if param_detail:
+                (name, min_spec, max_spec, default_value, description, 
+                 created_at, updated_at, module_name, part_name, item_type) = param_detail
+
+                # 상세 정보 업데이트
+                self.param_detail_labels["parameter_name"].config(text=name or "")
+                self.param_detail_labels["module_name"].config(text=module_name or "")
+                self.param_detail_labels["part_name"].config(text=part_name or "")
+                self.param_detail_labels["min_spec"].config(text=format_num_value(min_spec) if min_spec else "")
+                self.param_detail_labels["max_spec"].config(text=format_num_value(max_spec) if max_spec else "")
+                self.param_detail_labels["default_value"].config(text=format_num_value(default_value) if default_value else "")
+                self.param_detail_labels["description"].config(text=description or "")
+                self.param_detail_labels["item_type"].config(text=item_type or "")
+                self.param_detail_labels["created_at"].config(text=created_at or "")
+                self.param_detail_labels["updated_at"].config(text=updated_at or "")
+
+            conn.close()
+
+        except Exception as e:
+            messagebox.showerror("오류", f"파라미터 상세 정보 로드 중 오류 발생: {str(e)}")
+
     def manage_equipment_types(self):
         """장비 유형 관리 대화상자"""
         equipment_type_dialog = tk.Toplevel(self.window)
@@ -223,6 +358,9 @@ def add_default_db_functions_to_class(cls):
         equipment_type_dialog.geometry("600x400")
         equipment_type_dialog.transient(self.window)
         equipment_type_dialog.grab_set()
+
+        # 부모 창 중앙에 배치
+        center_dialog_on_parent(equipment_type_dialog, self.window)
 
         # 리스트박스 프레임
         list_frame = ttk.LabelFrame(equipment_type_dialog, text="장비 유형 목록")
@@ -279,7 +417,7 @@ def add_default_db_functions_to_class(cls):
             cursor = conn.cursor()
 
             # 장비 유형 조회
-            cursor.execute("SELECT id, name FROM equipment_types ORDER BY name")
+            cursor.execute("SELECT id, type_name FROM Equipment_Types ORDER BY type_name")
             equipment_types = cursor.fetchall()
 
             # 리스트박스에 추가
@@ -303,7 +441,7 @@ def add_default_db_functions_to_class(cls):
             cursor = conn.cursor()
 
             # 중복 체크
-            cursor.execute("SELECT COUNT(*) FROM equipment_types WHERE name = ?", (type_name,))
+            cursor.execute("SELECT COUNT(*) FROM Equipment_Types WHERE type_name = ?", (type_name,))
             if cursor.fetchone()[0] > 0:
                 messagebox.showerror("오류", "이미 존재하는 장비 유형명입니다.")
                 conn.close()
@@ -311,7 +449,7 @@ def add_default_db_functions_to_class(cls):
 
             # 장비 유형 추가
             cursor.execute(
-                "INSERT INTO equipment_types (name) VALUES (?)", 
+                "INSERT INTO Equipment_Types (type_name) VALUES (?)", 
                 (type_name,)
             )
             conn.commit()
@@ -319,8 +457,12 @@ def add_default_db_functions_to_class(cls):
             # 리스트박스 갱신
             self.load_equipment_type_list(listbox)
 
-            # 콤보박스도 갱신
-            self.load_equipment_types()
+            # 🆕 전체 탭 동기화 - 중앙화된 새로고침 함수 호출
+            if hasattr(self, 'refresh_all_equipment_type_lists'):
+                self.refresh_all_equipment_type_lists()
+            else:
+                # 콤보박스도 갱신 (fallback)
+                self.load_equipment_types()
 
             # 로그 업데이트
             self.update_log(f"[Default DB] 새 장비 유형 '{type_name}'이(가) 추가되었습니다.")
@@ -353,7 +495,7 @@ def add_default_db_functions_to_class(cls):
             cursor = conn.cursor()
 
             # 중복 체크
-            cursor.execute("SELECT COUNT(*) FROM equipment_types WHERE name = ? AND id != ?", (new_name, type_id))
+            cursor.execute("SELECT COUNT(*) FROM Equipment_Types WHERE type_name = ? AND id != ?", (new_name, type_id))
             if cursor.fetchone()[0] > 0:
                 messagebox.showerror("오류", "이미 존재하는 장비 유형명입니다.")
                 conn.close()
@@ -361,7 +503,7 @@ def add_default_db_functions_to_class(cls):
 
             # 장비 유형 수정
             cursor.execute(
-                "UPDATE equipment_types SET name = ? WHERE id = ?", 
+                "UPDATE Equipment_Types SET type_name = ? WHERE id = ?", 
                 (new_name, type_id)
             )
             conn.commit()
@@ -369,8 +511,12 @@ def add_default_db_functions_to_class(cls):
             # 리스트박스 갱신
             self.load_equipment_type_list(listbox)
 
-            # 콤보박스도 갱신
-            self.load_equipment_types()
+            # 🆕 전체 탭 동기화 - 중앙화된 새로고침 함수 호출
+            if hasattr(self, 'refresh_all_equipment_type_lists'):
+                self.refresh_all_equipment_type_lists()
+            else:
+                # 콤보박스도 갱신 (fallback)
+                self.load_equipment_types()
 
             # 로그 업데이트
             self.update_log(f"[Default DB] 장비 유형이 '{old_name}'에서 '{new_name}'으로 수정되었습니다.")
@@ -387,7 +533,7 @@ def add_default_db_functions_to_class(cls):
             messagebox.showinfo("알림", "삭제할 장비 유형을 선택하세요.")
             return
 
-        # 선택된 항목의 ID 추출
+        # 선택된 항목의 ID와 이름 추출
         selected_item = listbox.get(selected_index[0])
         type_id = int(selected_item.split("ID: ")[1].strip(")"))
         type_name = selected_item.split(" (ID:")[0]
@@ -395,7 +541,7 @@ def add_default_db_functions_to_class(cls):
         # 삭제 확인
         confirm = messagebox.askyesno(
             "삭제 확인", 
-            f"장비 유형 '{type_name}'을(를) 삭제하시겠습니까?\n\n주의: 관련된 모든 파라미터와 데이터가 함께 삭제됩니다!"
+            f"장비 유형 '{type_name}'을(를) 삭제하시겠습니까?\n\n주의: 관련된 모든 파라미터가 함께 삭제됩니다!"
         )
 
         if not confirm:
@@ -408,18 +554,11 @@ def add_default_db_functions_to_class(cls):
             # 트랜잭션 시작
             conn.execute("BEGIN TRANSACTION")
 
-            # 관련 파라미터 값 삭제
-            cursor.execute(
-                """DELETE FROM parameter_values 
-                   WHERE parameter_id IN (SELECT id FROM parameters WHERE equipment_type_id = ?)""", 
-                (type_id,)
-            )
-
-            # 관련 파라미터 삭제
-            cursor.execute("DELETE FROM parameters WHERE equipment_type_id = ?", (type_id,))
+            # 관련 파라미터 삭제 (Default_DB_Values 테이블에서)
+            cursor.execute("DELETE FROM Default_DB_Values WHERE equipment_type_id = ?", (type_id,))
 
             # 장비 유형 삭제
-            cursor.execute("DELETE FROM equipment_types WHERE id = ?", (type_id,))
+            cursor.execute("DELETE FROM Equipment_Types WHERE id = ?", (type_id,))
 
             # 트랜잭션 커밋
             conn.commit()
@@ -427,8 +566,12 @@ def add_default_db_functions_to_class(cls):
             # 리스트박스 갱신
             self.load_equipment_type_list(listbox)
 
-            # 콤보박스도 갱신
-            self.load_equipment_types()
+            # 🆕 전체 탭 동기화 - 중앙화된 새로고침 함수 호출
+            if hasattr(self, 'refresh_all_equipment_type_lists'):
+                self.refresh_all_equipment_type_lists()
+            else:
+                # 콤보박스도 갱신 (fallback)
+                self.load_equipment_types()
 
             # 로그 업데이트
             self.update_log(f"[Default DB] 장비 유형 '{type_name}'이(가) 삭제되었습니다.")
@@ -448,28 +591,48 @@ def add_default_db_functions_to_class(cls):
         # 파라미터 추가 대화상자
         param_dialog = tk.Toplevel(self.window)
         param_dialog.title("파라미터 추가")
-        param_dialog.geometry("400x300")
+        param_dialog.geometry("450x420")
         param_dialog.transient(self.window)
         param_dialog.grab_set()
 
         param_frame = ttk.Frame(param_dialog, padding=10)
         param_frame.pack(fill=tk.BOTH, expand=True)
 
-        # 파라미터 입력 필드
+        # 파라미터 입력 필드 (Module, Part, ItemType 추가)
         name_var, name_entry = create_label_entry_pair(param_frame, "파라미터명:", row=0)
-        min_var, min_entry = create_label_entry_pair(param_frame, "최소값:", row=1)
-        max_var, max_entry = create_label_entry_pair(param_frame, "최대값:", row=2)
-        unit_var, unit_entry = create_label_entry_pair(param_frame, "단위:", row=3)
+        module_var, module_entry = create_label_entry_pair(param_frame, "Module:", row=1)
+        part_var, part_entry = create_label_entry_pair(param_frame, "Part:", row=2)
+        
+        # ItemType 콤보박스
+        ttk.Label(param_frame, text="데이터 타입:").grid(row=3, column=0, padx=5, pady=5, sticky="w")
+        item_type_var = tk.StringVar()
+        item_type_combo = ttk.Combobox(
+            param_frame, 
+            textvariable=item_type_var, 
+            values=["double", "int", "string"], 
+            state="readonly"
+        )
+        item_type_combo.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
+        item_type_combo.set("double")  # 기본값
+        
+        min_var, min_entry = create_label_entry_pair(param_frame, "최소값:", row=4)
+        max_var, max_entry = create_label_entry_pair(param_frame, "최대값:", row=5)
+        default_var, default_entry = create_label_entry_pair(param_frame, "설정값:", row=6)
 
         # 설명 필드 (여러 줄)
-        ttk.Label(param_frame, text="설명:").grid(row=4, column=0, padx=5, pady=5, sticky="w")
-        desc_var = tk.StringVar()
-        desc_text = tk.Text(param_frame, height=5, width=30)
-        desc_text.grid(row=4, column=1, padx=5, pady=5, sticky="ew")
+        ttk.Label(param_frame, text="설명:").grid(row=7, column=0, padx=5, pady=5, sticky="w")
+        desc_text = tk.Text(param_frame, height=4, width=30)
+        desc_text.grid(row=7, column=1, padx=5, pady=5, sticky="ew")
+
+        # 열 너비 조정
+        param_frame.columnconfigure(1, weight=1)
 
         # 버튼 프레임
         button_frame = ttk.Frame(param_dialog)
         button_frame.pack(fill=tk.X, padx=10, pady=10)
+
+        # 부모 창 중앙에 배치
+        center_dialog_on_parent(param_dialog, self.window)
 
         # 저장 함수
         def save_parameter():
@@ -478,6 +641,10 @@ def add_default_db_functions_to_class(cls):
             if not name:
                 messagebox.showerror("오류", "파라미터명은 필수 입력 항목입니다.")
                 return
+
+            module_name = module_var.get().strip()
+            part_name = part_var.get().strip()
+            item_type = item_type_var.get()
 
             # 숫자 입력값 변환
             try:
@@ -492,7 +659,7 @@ def add_default_db_functions_to_class(cls):
                 messagebox.showerror("오류", "최소값이 최대값보다 클 수 없습니다.")
                 return
 
-            unit = unit_var.get().strip()
+            default_value = default_var.get().strip()
             description = desc_text.get("1.0", tk.END).strip()
 
             try:
@@ -501,7 +668,7 @@ def add_default_db_functions_to_class(cls):
 
                 # 중복 체크
                 cursor.execute(
-                    "SELECT COUNT(*) FROM parameters WHERE name = ? AND equipment_type_id = ?", 
+                    "SELECT COUNT(*) FROM Default_DB_Values WHERE parameter_name = ? AND equipment_type_id = ?", 
                     (name, self.selected_equipment_type_id)
                 )
                 if cursor.fetchone()[0] > 0:
@@ -509,12 +676,14 @@ def add_default_db_functions_to_class(cls):
                     conn.close()
                     return
 
-                # 파라미터 추가
+                # 파라미터 추가 (Module, Part, ItemType 포함)
                 cursor.execute(
-                    """INSERT INTO parameters 
-                       (equipment_type_id, name, min_value, max_value, unit, description) 
-                       VALUES (?, ?, ?, ?, ?, ?)""", 
-                    (self.selected_equipment_type_id, name, min_value, max_value, unit, description)
+                    """INSERT INTO Default_DB_Values 
+                       (equipment_type_id, parameter_name, min_spec, max_spec, default_value, description,
+                        module_name, part_name, item_type) 
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""", 
+                    (self.selected_equipment_type_id, name, min_value, max_value, default_value, description,
+                     module_name, part_name, item_type)
                 )
                 conn.commit()
 
@@ -553,10 +722,11 @@ def add_default_db_functions_to_class(cls):
             conn = self.get_db_connection()
             cursor = conn.cursor()
 
-            # 파라미터 정보 조회
+            # 파라미터 정보 조회 (Module, Part, ItemType 포함)
             cursor.execute(
-                """SELECT name, min_value, max_value, unit, description 
-                   FROM parameters WHERE id = ?""", 
+                """SELECT parameter_name, min_spec, max_spec, default_value, description,
+                          module_name, part_name, item_type
+                   FROM Default_DB_Values WHERE id = ?""", 
                 (param_id,)
             )
             param_data = cursor.fetchone()
@@ -566,39 +736,61 @@ def add_default_db_functions_to_class(cls):
                 conn.close()
                 return
 
-            name, min_value, max_value, unit, description = param_data
+            (name, min_value, max_value, default_value, description, 
+             module_name, part_name, item_type) = param_data
 
             # 파라미터 수정 대화상자
             param_dialog = tk.Toplevel(self.window)
             param_dialog.title("파라미터 수정")
-            param_dialog.geometry("400x300")
+            param_dialog.geometry("450x420")
             param_dialog.transient(self.window)
             param_dialog.grab_set()
 
             param_frame = ttk.Frame(param_dialog, padding=10)
             param_frame.pack(fill=tk.BOTH, expand=True)
 
-            # 파라미터 입력 필드
+            # 파라미터 입력 필드 (Module, Part, ItemType 포함)
             name_var, name_entry = create_label_entry_pair(param_frame, "파라미터명:", row=0, initial_value=name)
+            module_var, module_entry = create_label_entry_pair(param_frame, "Module:", row=1, initial_value=module_name or "")
+            part_var, part_entry = create_label_entry_pair(param_frame, "Part:", row=2, initial_value=part_name or "")
+            
+            # ItemType 콤보박스
+            ttk.Label(param_frame, text="데이터 타입:").grid(row=3, column=0, padx=5, pady=5, sticky="w")
+            item_type_var = tk.StringVar()
+            item_type_combo = ttk.Combobox(
+                param_frame, 
+                textvariable=item_type_var, 
+                values=["double", "int", "string"], 
+                state="readonly"
+            )
+            item_type_combo.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
+            item_type_combo.set(item_type or "double")  # 기존값 또는 기본값
+            
             min_var, min_entry = create_label_entry_pair(
-                param_frame, "최소값:", row=1, 
+                param_frame, "최소값:", row=4, 
                 initial_value=str(min_value) if min_value is not None else ""
             )
             max_var, max_entry = create_label_entry_pair(
-                param_frame, "최대값:", row=2, 
+                param_frame, "최대값:", row=5, 
                 initial_value=str(max_value) if max_value is not None else ""
             )
-            unit_var, unit_entry = create_label_entry_pair(param_frame, "단위:", row=3, initial_value=unit or "")
+            default_var, default_entry = create_label_entry_pair(param_frame, "설정값:", row=6, initial_value=default_value or "")
 
             # 설명 필드 (여러 줄)
-            ttk.Label(param_frame, text="설명:").grid(row=4, column=0, padx=5, pady=5, sticky="w")
-            desc_text = tk.Text(param_frame, height=5, width=30)
-            desc_text.grid(row=4, column=1, padx=5, pady=5, sticky="ew")
+            ttk.Label(param_frame, text="설명:").grid(row=7, column=0, padx=5, pady=5, sticky="w")
+            desc_text = tk.Text(param_frame, height=4, width=30)
+            desc_text.grid(row=7, column=1, padx=5, pady=5, sticky="ew")
             desc_text.insert("1.0", description or "")
+
+            # 열 너비 조정
+            param_frame.columnconfigure(1, weight=1)
 
             # 버튼 프레임
             button_frame = ttk.Frame(param_dialog)
             button_frame.pack(fill=tk.X, padx=10, pady=10)
+
+            # 부모 창 중앙에 배치
+            center_dialog_on_parent(param_dialog, self.window)
 
             # 저장 함수
             def save_parameter():
@@ -607,6 +799,10 @@ def add_default_db_functions_to_class(cls):
                 if not new_name:
                     messagebox.showerror("오류", "파라미터명은 필수 입력 항목입니다.")
                     return
+
+                new_module_name = module_var.get().strip()
+                new_part_name = part_var.get().strip()
+                new_item_type = item_type_var.get()
 
                 # 숫자 입력값 변환
                 try:
@@ -621,7 +817,7 @@ def add_default_db_functions_to_class(cls):
                     messagebox.showerror("오류", "최소값이 최대값보다 클 수 없습니다.")
                     return
 
-                new_unit = unit_var.get().strip()
+                new_default_value = default_var.get().strip()
                 new_description = desc_text.get("1.0", tk.END).strip()
 
                 try:
@@ -631,8 +827,8 @@ def add_default_db_functions_to_class(cls):
                     # 중복 체크 (이름이 변경된 경우)
                     if new_name != name:
                         cursor.execute(
-                            """SELECT COUNT(*) FROM parameters 
-                               WHERE name = ? AND equipment_type_id = ? AND id != ?""", 
+                            """SELECT COUNT(*) FROM Default_DB_Values 
+                               WHERE parameter_name = ? AND equipment_type_id = ? AND id != ?""", 
                             (new_name, self.selected_equipment_type_id, param_id)
                         )
                         if cursor.fetchone()[0] > 0:
@@ -640,13 +836,15 @@ def add_default_db_functions_to_class(cls):
                             conn.close()
                             return
 
-                    # 파라미터 수정
+                    # 파라미터 수정 (Module, Part, ItemType 포함)
                     cursor.execute(
-                        """UPDATE parameters 
-                           SET name = ?, min_value = ?, max_value = ?, unit = ?, 
-                               description = ?, updated_at = CURRENT_TIMESTAMP 
+                        """UPDATE Default_DB_Values 
+                           SET parameter_name = ?, min_spec = ?, max_spec = ?, default_value = ?, 
+                               description = ?, module_name = ?, part_name = ?, item_type = ?,
+                               updated_at = CURRENT_TIMESTAMP 
                            WHERE id = ?""", 
-                        (new_name, new_min_value, new_max_value, new_unit, new_description, param_id)
+                        (new_name, new_min_value, new_max_value, new_default_value, new_description,
+                         new_module_name, new_part_name, new_item_type, param_id)
                     )
                     conn.commit()
 
@@ -702,11 +900,8 @@ def add_default_db_functions_to_class(cls):
             # 트랜잭션 시작
             conn.execute("BEGIN TRANSACTION")
 
-            # 관련 파라미터 값 삭제
-            cursor.execute("DELETE FROM parameter_values WHERE parameter_id = ?", (param_id,))
-
-            # 파라미터 삭제
-            cursor.execute("DELETE FROM parameters WHERE id = ?", (param_id,))
+            # 파라미터 삭제 (Default_DB_Values 테이블에서)
+            cursor.execute("DELETE FROM Default_DB_Values WHERE id = ?", (param_id,))
 
             # 트랜잭션 커밋
             conn.commit()
@@ -765,7 +960,7 @@ def add_default_db_functions_to_class(cls):
                 "파라미터명": "name",
                 "최소값": "min_value",
                 "최대값": "max_value",
-                "단위": "unit",
+                "설정값": "default_value",
                 "설명": "description"
             }
 
@@ -773,7 +968,7 @@ def add_default_db_functions_to_class(cls):
             df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
 
             # 누락된 열 추가
-            for col in ["unit", "description"]:
+            for col in ["default_value", "description"]:
                 if col not in df.columns:
                     df[col] = None
 
@@ -799,7 +994,7 @@ def add_default_db_functions_to_class(cls):
             # 기존 파라미터 조회
             loading_dialog.update_progress(50, "기존 파라미터 확인 중...")
             cursor.execute(
-                "SELECT name FROM parameters WHERE equipment_type_id = ?", 
+                "SELECT parameter_name FROM Default_DB_Values WHERE equipment_type_id = ?", 
                 (self.selected_equipment_type_id,)
             )
             existing_params = [row[0] for row in cursor.fetchall()]
@@ -840,27 +1035,27 @@ def add_default_db_functions_to_class(cls):
                 name = row['name']
                 min_value = row['min_value'] if not pd.isna(row['min_value']) else None
                 max_value = row['max_value'] if not pd.isna(row['max_value']) else None
-                unit = row['unit'] if 'unit' in row and not pd.isna(row['unit']) else None
+                default_value = row['default_value'] if 'default_value' in row and not pd.isna(row['default_value']) else None
                 description = row['description'] if 'description' in row and not pd.isna(row['description']) else None
 
                 # 기존 파라미터인지 확인
                 if name in existing_params:
                     # 업데이트
                     cursor.execute(
-                        """UPDATE parameters 
-                           SET min_value = ?, max_value = ?, unit = ?, 
+                        """UPDATE Default_DB_Values 
+                           SET min_spec = ?, max_spec = ?, default_value = ?, 
                                description = ?, updated_at = CURRENT_TIMESTAMP 
-                           WHERE name = ? AND equipment_type_id = ?""", 
-                        (min_value, max_value, unit, description, name, self.selected_equipment_type_id)
+                           WHERE parameter_name = ? AND equipment_type_id = ?""", 
+                        (min_value, max_value, default_value, description, name, self.selected_equipment_type_id)
                     )
                     updated_count += 1
                 else:
                     # 추가
                     cursor.execute(
-                        """INSERT INTO parameters 
-                           (equipment_type_id, name, min_value, max_value, unit, description) 
+                        """INSERT INTO Default_DB_Values 
+                           (equipment_type_id, parameter_name, min_spec, max_spec, default_value, description) 
                            VALUES (?, ?, ?, ?, ?, ?)""", 
-                        (self.selected_equipment_type_id, name, min_value, max_value, unit, description)
+                        (self.selected_equipment_type_id, name, min_value, max_value, default_value, description)
                     )
                     added_count += 1
 
@@ -924,19 +1119,19 @@ def add_default_db_functions_to_class(cls):
 
         try:
             # 로딩 대화상자 표시
-            loading_dialog = LoadingDialog(self.window)
+            loading_dialog = LoadingDialog(self.window, "데이터 준비 중...")
             self.window.update_idletasks()
-            loading_dialog.update_progress(10, "데이터 준비 중...")
+            loading_dialog.update_progress(10, "데이터 변환 중...")
 
             # DB에서 파라미터 데이터 조회
             conn = self.get_db_connection()
             cursor = conn.cursor()
 
             query = """
-            SELECT name, min_value, max_value, unit, description, created_at, updated_at 
-            FROM parameters 
+            SELECT id, parameter_name, min_spec, max_spec, default_value, description, created_at, updated_at 
+            FROM Default_DB_Values 
             WHERE equipment_type_id = ? 
-            ORDER BY name
+            ORDER BY parameter_name
             """
             cursor.execute(query, (self.selected_equipment_type_id,))
             parameters = cursor.fetchall()
@@ -944,14 +1139,14 @@ def add_default_db_functions_to_class(cls):
             # 데이터프레임 생성
             loading_dialog.update_progress(40, "데이터 변환 중...")
             df = pd.DataFrame(parameters, columns=[
-                "파라미터명", "최소값", "최대값", "단위", "설명", "생성일시", "수정일시"
+                "파라미터명", "최소값", "최대값", "설정값", "설명", "생성일시", "수정일시"
             ])
 
             # 추가 정보 시트 준비
             loading_dialog.update_progress(70, "메타데이터 준비 중...")
 
             # 장비 유형 정보 조회
-            cursor.execute("SELECT * FROM equipment_types WHERE id = ?", (self.selected_equipment_type_id,))
+            cursor.execute("SELECT * FROM Equipment_Types WHERE id = ?", (self.selected_equipment_type_id,))
             equipment_info = cursor.fetchone()
 
             info_data = {
@@ -993,10 +1188,128 @@ def add_default_db_functions_to_class(cls):
 
             messagebox.showerror("오류", f"파일 저장 중 오류 발생: {str(e)}")
 
+    def import_from_text_file(self):
+        """텍스트 파일에서 파라미터 Import"""
+        try:
+            self.initialize_text_file_handler()
+            
+            # 파일 선택 대화상자
+            file_path = filedialog.askopenfilename(
+                title="텍스트 파일 선택",
+                filetypes=[
+                    ("텍스트 파일", "*.txt"),
+                    ("모든 파일", "*.*")
+                ]
+            )
+            
+            if not file_path:
+                return
+            
+            # 파일 형식 먼저 검증
+            is_valid, error_msg = self.text_file_handler.validate_text_file_format(file_path)
+            if not is_valid:
+                messagebox.showerror("오류", error_msg)
+                return
+            
+            # 장비 유형명 입력받기 (로딩 다이얼로그 전에)
+            equipment_type_name = simpledialog.askstring(
+                "장비 유형", 
+                f"장비 유형명을 입력하세요:\n(파일: {os.path.basename(file_path)})",
+                initialvalue=os.path.splitext(os.path.basename(file_path))[0]
+            )
+            
+            if not equipment_type_name:
+                messagebox.showinfo("알림", "Import가 취소되었습니다.")
+                return
+            
+            # 로딩 다이얼로그 표시
+            loading_dialog = LoadingDialog(self.window, "텍스트 파일을 Import하는 중...")
+            
+            def import_task():
+                try:
+                    # Import 실행
+                    success, message = self.text_file_handler.import_from_text_file(file_path, equipment_type_name)
+                    return success, message
+                    
+                except Exception as e:
+                    return False, f"Import 중 오류 발생: {str(e)}"
+            
+            # 백그라운드에서 Import 실행
+            success, message = loading_dialog.run_task(import_task)
+            
+            if success:
+                messagebox.showinfo("성공", message)
+                # 장비 유형 목록과 파라미터 목록 새로고침
+                self.load_equipment_types()
+                self.update_log("[Default DB] 텍스트 파일 Import가 완료되었습니다.")
+            else:
+                messagebox.showerror("오류", message)
+                
+        except Exception as e:
+            messagebox.showerror("오류", f"텍스트 파일 Import 중 오류 발생: {str(e)}")
+
+    def export_to_text_file(self):
+        """텍스트 파일로 파라미터 Export"""
+        try:
+            # 장비 유형이 선택되었는지 확인
+            if not hasattr(self, 'selected_equipment_type_id') or not self.selected_equipment_type_id:
+                messagebox.showwarning("경고", "먼저 장비 유형을 선택해주세요.")
+                return
+            
+            self.initialize_text_file_handler()
+            
+            # Export 데이터 검증
+            is_valid, message, data_count = self.text_file_handler.validate_export_data(self.selected_equipment_type_id)
+            if not is_valid:
+                messagebox.showerror("오류", message)
+                return
+            
+            # 확인 대화상자
+            selected_type = self.equipment_type_var.get()
+            if not messagebox.askyesno("확인", f"장비 유형 '{selected_type}'의 {data_count}개 파라미터를 텍스트 파일로 Export하시겠습니까?"):
+                return
+            
+            # 파일 저장 대화상자
+            file_path = filedialog.asksaveasfilename(
+                title="텍스트 파일로 저장",
+                defaultextension=".txt",
+                initialvalue=f"{selected_type}_Parameters.txt",
+                filetypes=[
+                    ("텍스트 파일", "*.txt"),
+                    ("모든 파일", "*.*")
+                ]
+            )
+            
+            if not file_path:
+                return
+            
+            # 로딩 다이얼로그 표시
+            loading_dialog = LoadingDialog(self.window, "텍스트 파일로 Export하는 중...")
+            
+            def export_task():
+                try:
+                    return self.text_file_handler.export_to_text_file(self.selected_equipment_type_id, file_path)
+                except Exception as e:
+                    return False, f"Export 중 오류 발생: {str(e)}"
+            
+            # 백그라운드에서 Export 실행
+            success, message = loading_dialog.run_task(export_task)
+            
+            if success:
+                messagebox.showinfo("성공", message)
+                self.update_log("[Default DB] 텍스트 파일 Export가 완료되었습니다.")
+            else:
+                messagebox.showerror("오류", message)
+                
+        except Exception as e:
+            messagebox.showerror("오류", f"텍스트 파일 Export 중 오류 발생: {str(e)}")
+
     # 클래스에 함수 추가
     cls.create_default_db_tab = create_default_db_tab
+    cls.initialize_text_file_handler = initialize_text_file_handler
     cls.load_equipment_types = load_equipment_types
     cls.on_equipment_type_selected = on_equipment_type_selected
+    cls.on_parameter_selected = on_parameter_selected
     cls.manage_equipment_types = manage_equipment_types
     cls.load_equipment_type_list = load_equipment_type_list
     cls.add_equipment_type = add_equipment_type
@@ -1007,3 +1320,5 @@ def add_default_db_functions_to_class(cls):
     cls.delete_parameter = delete_parameter
     cls.import_from_excel = import_from_excel
     cls.export_to_excel = export_to_excel
+    cls.import_from_text_file = import_from_text_file
+    cls.export_to_text_file = export_to_text_file

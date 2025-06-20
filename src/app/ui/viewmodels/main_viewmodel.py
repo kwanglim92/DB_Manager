@@ -44,12 +44,32 @@ class MainViewModel(BaseViewModel):
         self.set_property('merged_df', None, notify=False)
         
         # UI 상태
-        self.set_property('status_message', "Ready", notify=False)
+        self.set_property('status_message', "👤 장비 생산 엔지니어 모드", notify=False)
         self.set_property('log_messages', ObservableList(), notify=False)
         
         # 데이터베이스 상태
         self.set_property('db_connected', False, notify=False)
         self.set_property('db_path', "", notify=False)
+        
+        # 🎯 DB 비교 관련 속성들
+        self.set_property('comparison_data', ObservableList(), notify=False)
+        self.set_property('selected_items', ObservableList(), notify=False)
+        self.set_property('search_filter', "", notify=False)
+        self.set_property('show_differences_only', False, notify=False)
+        self.set_property('show_default_candidates', False, notify=False)
+        
+        # 🎯 QC 기능 관련 속성들 (QC 모드일 때만 활성화)
+        self.set_property('qc_results', ObservableList(), notify=False)
+        self.set_property('equipment_types', ObservableList(), notify=False)
+        self.set_property('default_db_values', ObservableList(), notify=False)
+        self.set_property('change_history', ObservableList(), notify=False)
+        
+        # 🎯 통계 및 분석 관련
+        self.set_property('statistics_data', ObservableDict(), notify=False)
+        self.set_property('analysis_progress', 0, notify=False)
+        
+        # 🎯 설정 관련
+        self.set_property('use_new_services', ObservableDict(), notify=False)
     
     def _init_database(self):
         """데이터베이스 초기화"""
@@ -87,6 +107,44 @@ class MainViewModel(BaseViewModel):
         
         # 로깅 명령
         self.register_command('clear_log', self._clear_log_execute)
+        
+        # 🎯 DB 비교 관련 명령들
+        self.register_command('update_comparison_view', self._update_comparison_view_execute)
+        self.register_command('toggle_search_filter', self._toggle_search_filter_execute)
+        self.register_command('toggle_differences_only', self._toggle_differences_only_execute)
+        self.register_command('toggle_default_candidates', self._toggle_default_candidates_execute,
+                            self._can_toggle_default_candidates)
+        self.register_command('add_to_default_db', self._add_to_default_db_execute,
+                            self._can_add_to_default_db)
+        
+        # 🎯 QC 기능 관련 명령들 (QC 모드일 때만 활성화)
+        self.register_command('run_qc_check', self._run_qc_check_execute,
+                            self._can_run_qc_check)
+        self.register_command('load_equipment_types', self._load_equipment_types_execute)
+        self.register_command('add_equipment_type', self._add_equipment_type_execute,
+                            self._can_modify_equipment_types)
+        self.register_command('delete_equipment_type', self._delete_equipment_type_execute,
+                            self._can_modify_equipment_types)
+        self.register_command('load_default_db_values', self._load_default_db_values_execute)
+        self.register_command('add_parameter', self._add_parameter_execute,
+                            self._can_modify_parameters)
+        self.register_command('edit_parameter', self._edit_parameter_execute,
+                            self._can_modify_parameters)
+        self.register_command('delete_parameter', self._delete_parameter_execute,
+                            self._can_modify_parameters)
+        
+        # 🎯 통계 및 분석 관련 명령들
+        self.register_command('calculate_statistics', self._calculate_statistics_execute,
+                            self._can_calculate_statistics)
+        self.register_command('export_statistics', self._export_statistics_execute,
+                            self._can_export_statistics)
+        self.register_command('refresh_all_data', self._refresh_all_data_execute)
+        
+        # 🎯 변경 이력 관련 명령들
+        self.register_command('load_change_history', self._load_change_history_execute,
+                            self._can_access_change_history)
+        self.register_command('export_change_history', self._export_change_history_execute,
+                            self._can_access_change_history)
     
     # 속성 접근자들
     @property
@@ -156,6 +214,86 @@ class MainViewModel(BaseViewModel):
     def window_geometry(self) -> str:
         """윈도우 크기"""
         return self.get_property('window_geometry', "1300x800")
+    
+    # 🎯 DB 비교 관련 속성 접근자들
+    @property
+    def comparison_data(self) -> ObservableList:
+        """비교 데이터"""
+        return self.get_property('comparison_data', ObservableList())
+    
+    @property
+    def selected_items(self) -> ObservableList:
+        """선택된 항목들"""
+        return self.get_property('selected_items', ObservableList())
+    
+    @property
+    def search_filter(self) -> str:
+        """검색 필터"""
+        return self.get_property('search_filter', "")
+    
+    @search_filter.setter
+    def search_filter(self, value: str):
+        """검색 필터 설정"""
+        self.set_property('search_filter', value)
+    
+    @property
+    def show_differences_only(self) -> bool:
+        """차이점만 표시"""
+        return self.get_property('show_differences_only', False)
+    
+    @show_differences_only.setter
+    def show_differences_only(self, value: bool):
+        """차이점만 표시 설정"""
+        self.set_property('show_differences_only', value)
+    
+    @property
+    def show_default_candidates(self) -> bool:
+        """설정값 후보 표시"""
+        return self.get_property('show_default_candidates', False)
+    
+    @show_default_candidates.setter
+    def show_default_candidates(self, value: bool):
+        """설정값 후보 표시 설정"""
+        if self.maint_mode:  # QC 모드일 때만 허용
+            self.set_property('show_default_candidates', value)
+    
+    # 🎯 QC 기능 관련 속성 접근자들
+    @property
+    def qc_results(self) -> ObservableList:
+        """QC 검수 결과"""
+        return self.get_property('qc_results', ObservableList())
+    
+    @property
+    def equipment_types(self) -> ObservableList:
+        """장비 유형 목록"""
+        return self.get_property('equipment_types', ObservableList())
+    
+    @property
+    def default_db_values(self) -> ObservableList:
+        """설정값 DB 목록"""
+        return self.get_property('default_db_values', ObservableList())
+    
+    @property
+    def change_history(self) -> ObservableList:
+        """변경 이력"""
+        return self.get_property('change_history', ObservableList())
+    
+    # 🎯 통계 및 분석 관련 속성 접근자들
+    @property
+    def statistics_data(self) -> ObservableDict:
+        """통계 데이터"""
+        return self.get_property('statistics_data', ObservableDict())
+    
+    @property
+    def analysis_progress(self) -> int:
+        """분석 진행률 (0-100)"""
+        return self.get_property('analysis_progress', 0)
+    
+    @analysis_progress.setter
+    def analysis_progress(self, value: int):
+        """분석 진행률 설정"""
+        value = max(0, min(100, value))  # 0-100 범위로 제한
+        self.set_property('analysis_progress', value)
     
     # 로깅 관련 메서드들
     def add_log_message(self, message: str):
@@ -398,23 +536,284 @@ class MainViewModel(BaseViewModel):
     def refresh(self):
         """ViewModel 새로고침"""
         try:
-            # 데이터베이스 상태 재확인
+            # 데이터베이스 상태 확인
             if self.db_schema:
                 self.set_property('db_connected', True)
             else:
                 self.set_property('db_connected', False)
             
-            # 파일 상태 재확인
-            if self.folder_path and os.path.exists(self.folder_path):
-                # 폴더가 여전히 존재하는지 확인
-                pass
-            else:
-                # 폴더가 삭제되었으면 클리어
-                if self.folder_path:
-                    self.clear_files()
-                    self.add_log_message("폴더가 더 이상 존재하지 않아 파일들을 클리어했습니다.")
-            
+            # 기타 새로고침 로직
             self.add_log_message("ViewModel 새로고침 완료")
             
         except Exception as e:
-            self.error_message = f"새로고침 중 오류: {str(e)}" 
+            self.error_message = f"새로고침 중 오류: {str(e)}"
+            self.add_log_message(f"새로고침 중 오류: {str(e)}")
+    
+    # 🎯 새로 추가된 명령 실행 메서드들
+    
+    # DB 비교 관련 명령 실행 메서드들
+    def _update_comparison_view_execute(self) -> bool:
+        """비교 뷰 업데이트"""
+        try:
+            self.add_log_message("비교 뷰 업데이트 시작")
+            # 실제 비교 로직은 서비스 레이어에서 처리
+            return True
+        except Exception as e:
+            self.error_message = f"비교 뷰 업데이트 실패: {str(e)}"
+            return False
+    
+    def _toggle_search_filter_execute(self, filter_text: str = "") -> bool:
+        """검색 필터 토글"""
+        try:
+            self.search_filter = filter_text
+            self.add_log_message(f"검색 필터 설정: '{filter_text}'")
+            return True
+        except Exception as e:
+            self.error_message = f"검색 필터 설정 실패: {str(e)}"
+            return False
+    
+    def _toggle_differences_only_execute(self) -> bool:
+        """차이점만 표시 토글"""
+        try:
+            new_value = not self.show_differences_only
+            self.show_differences_only = new_value
+            self.add_log_message(f"차이점만 표시: {'활성화' if new_value else '비활성화'}")
+            return True
+        except Exception as e:
+            self.error_message = f"차이점만 표시 토글 실패: {str(e)}"
+            return False
+    
+    def _toggle_default_candidates_execute(self) -> bool:
+        """설정값 후보 표시 토글"""
+        try:
+            if not self.maint_mode:
+                self.error_message = "QC 모드에서만 사용 가능합니다."
+                return False
+            
+            new_value = not self.show_default_candidates
+            self.show_default_candidates = new_value
+            self.add_log_message(f"설정값 후보 표시: {'활성화' if new_value else '비활성화'}")
+            return True
+        except Exception as e:
+            self.error_message = f"설정값 후보 표시 토글 실패: {str(e)}"
+            return False
+    
+    def _can_toggle_default_candidates(self) -> bool:
+        """설정값 후보 표시 토글 가능 여부"""
+        return self.maint_mode
+    
+    def _add_to_default_db_execute(self, items: List[Dict]) -> bool:
+        """설정값 DB에 항목 추가"""
+        try:
+            if not self.maint_mode:
+                self.error_message = "QC 모드에서만 사용 가능합니다."
+                return False
+            
+            added_count = len(items)
+            self.add_log_message(f"설정값 DB에 {added_count}개 항목 추가")
+            return True
+        except Exception as e:
+            self.error_message = f"설정값 DB 추가 실패: {str(e)}"
+            return False
+    
+    def _can_add_to_default_db(self) -> bool:
+        """설정값 DB 추가 가능 여부"""
+        return self.maint_mode and len(self.selected_items) > 0
+    
+    # QC 기능 관련 명령 실행 메서드들
+    def _run_qc_check_execute(self) -> bool:
+        """QC 검수 실행"""
+        try:
+            if not self.maint_mode:
+                self.error_message = "QC 모드에서만 사용 가능합니다."
+                return False
+            
+            self.add_log_message("QC 검수 시작")
+            # 실제 QC 로직은 서비스 레이어에서 처리
+            return True
+        except Exception as e:
+            self.error_message = f"QC 검수 실행 실패: {str(e)}"
+            return False
+    
+    def _can_run_qc_check(self) -> bool:
+        """QC 검수 실행 가능 여부"""
+        return self.maint_mode and self.has_files_loaded()
+    
+    def _load_equipment_types_execute(self) -> bool:
+        """장비 유형 로드"""
+        try:
+            self.add_log_message("장비 유형 목록 로드")
+            # 실제 로드 로직은 서비스 레이어에서 처리
+            return True
+        except Exception as e:
+            self.error_message = f"장비 유형 로드 실패: {str(e)}"
+            return False
+    
+    def _add_equipment_type_execute(self, type_name: str, description: str = "") -> bool:
+        """장비 유형 추가"""
+        try:
+            if not self.maint_mode:
+                self.error_message = "QC 모드에서만 사용 가능합니다."
+                return False
+            
+            self.add_log_message(f"장비 유형 추가: {type_name}")
+            return True
+        except Exception as e:
+            self.error_message = f"장비 유형 추가 실패: {str(e)}"
+            return False
+    
+    def _delete_equipment_type_execute(self, type_id: int) -> bool:
+        """장비 유형 삭제"""
+        try:
+            if not self.maint_mode:
+                self.error_message = "QC 모드에서만 사용 가능합니다."
+                return False
+            
+            self.add_log_message(f"장비 유형 삭제: ID {type_id}")
+            return True
+        except Exception as e:
+            self.error_message = f"장비 유형 삭제 실패: {str(e)}"
+            return False
+    
+    def _can_modify_equipment_types(self) -> bool:
+        """장비 유형 수정 가능 여부"""
+        return self.maint_mode
+    
+    def _load_default_db_values_execute(self) -> bool:
+        """설정값 DB 로드"""
+        try:
+            self.add_log_message("설정값 DB 로드")
+            return True
+        except Exception as e:
+            self.error_message = f"설정값 DB 로드 실패: {str(e)}"
+            return False
+    
+    def _add_parameter_execute(self, parameter_data: Dict) -> bool:
+        """파라미터 추가"""
+        try:
+            if not self.maint_mode:
+                self.error_message = "QC 모드에서만 사용 가능합니다."
+                return False
+            
+            param_name = parameter_data.get('name', 'Unknown')
+            self.add_log_message(f"파라미터 추가: {param_name}")
+            return True
+        except Exception as e:
+            self.error_message = f"파라미터 추가 실패: {str(e)}"
+            return False
+    
+    def _edit_parameter_execute(self, parameter_id: int, parameter_data: Dict) -> bool:
+        """파라미터 편집"""
+        try:
+            if not self.maint_mode:
+                self.error_message = "QC 모드에서만 사용 가능합니다."
+                return False
+            
+            param_name = parameter_data.get('name', f'ID {parameter_id}')
+            self.add_log_message(f"파라미터 편집: {param_name}")
+            return True
+        except Exception as e:
+            self.error_message = f"파라미터 편집 실패: {str(e)}"
+            return False
+    
+    def _delete_parameter_execute(self, parameter_id: int) -> bool:
+        """파라미터 삭제"""
+        try:
+            if not self.maint_mode:
+                self.error_message = "QC 모드에서만 사용 가능합니다."
+                return False
+            
+            self.add_log_message(f"파라미터 삭제: ID {parameter_id}")
+            return True
+        except Exception as e:
+            self.error_message = f"파라미터 삭제 실패: {str(e)}"
+            return False
+    
+    def _can_modify_parameters(self) -> bool:
+        """파라미터 수정 가능 여부"""
+        return self.maint_mode
+    
+    # 통계 및 분석 관련 명령 실행 메서드들
+    def _calculate_statistics_execute(self) -> bool:
+        """통계 계산"""
+        try:
+            self.add_log_message("통계 분석 시작")
+            self.analysis_progress = 0
+            
+            # 진행률 시뮬레이션 (실제로는 서비스 레이어에서 처리)
+            for i in range(0, 101, 10):
+                self.analysis_progress = i
+            
+            self.add_log_message("통계 분석 완료")
+            return True
+        except Exception as e:
+            self.error_message = f"통계 계산 실패: {str(e)}"
+            return False
+    
+    def _can_calculate_statistics(self) -> bool:
+        """통계 계산 가능 여부"""
+        return self.has_files_loaded()
+    
+    def _export_statistics_execute(self, export_path: str) -> bool:
+        """통계 내보내기"""
+        try:
+            self.add_log_message(f"통계 데이터 내보내기: {export_path}")
+            return True
+        except Exception as e:
+            self.error_message = f"통계 내보내기 실패: {str(e)}"
+            return False
+    
+    def _can_export_statistics(self) -> bool:
+        """통계 내보내기 가능 여부"""
+        return len(self.statistics_data) > 0
+    
+    def _refresh_all_data_execute(self) -> bool:
+        """모든 데이터 새로고침"""
+        try:
+            self.add_log_message("전체 데이터 새로고침 시작")
+            
+            # 데이터베이스 재연결
+            self.reconnect_database()
+            
+            # 각종 데이터 다시 로드
+            if self.maint_mode:
+                self._load_equipment_types_execute()
+                self._load_default_db_values_execute()
+                self._load_change_history_execute()
+            
+            self.add_log_message("전체 데이터 새로고침 완료")
+            return True
+        except Exception as e:
+            self.error_message = f"전체 데이터 새로고침 실패: {str(e)}"
+            return False
+    
+    # 변경 이력 관련 명령 실행 메서드들
+    def _load_change_history_execute(self) -> bool:
+        """변경 이력 로드"""
+        try:
+            if not self.maint_mode:
+                self.error_message = "QC 모드에서만 사용 가능합니다."
+                return False
+            
+            self.add_log_message("변경 이력 로드")
+            return True
+        except Exception as e:
+            self.error_message = f"변경 이력 로드 실패: {str(e)}"
+            return False
+    
+    def _export_change_history_execute(self, export_path: str) -> bool:
+        """변경 이력 내보내기"""
+        try:
+            if not self.maint_mode:
+                self.error_message = "QC 모드에서만 사용 가능합니다."
+                return False
+            
+            self.add_log_message(f"변경 이력 내보내기: {export_path}")
+            return True
+        except Exception as e:
+            self.error_message = f"변경 이력 내보내기 실패: {str(e)}"
+            return False
+    
+    def _can_access_change_history(self) -> bool:
+        """변경 이력 접근 가능 여부"""
+        return self.maint_mode

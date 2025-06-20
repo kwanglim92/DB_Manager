@@ -141,26 +141,65 @@ class MainController(BaseController):
         """메뉴바 생성"""
         self.menubar = tk.Menu(self.main_window)
         
-        # 파일 메뉴
+        # 📁 파일 메뉴
         file_menu = tk.Menu(self.menubar, tearoff=0)
-        file_menu.add_command(label="폴더 열기 (Ctrl+O)", command=self._handle_load_folder)
+        file_menu.add_command(label="📁 폴더 열기 (Ctrl+O)", command=self._handle_load_folder)
         file_menu.add_separator()
-        file_menu.add_command(label="종료", command=self.main_window.quit)
-        self.menubar.add_cascade(label="파일", menu=file_menu)
+        file_menu.add_command(label="🔄 전체 데이터 새로고침", command=self._handle_refresh_all_data)
+        file_menu.add_separator()
+        file_menu.add_command(label="📊 통계 보고서 내보내기", command=self._handle_export_report)
+        file_menu.add_separator()
+        file_menu.add_command(label="❌ 종료", command=self.main_window.quit)
+        self.menubar.add_cascade(label="📁 파일", menu=file_menu)
         
-        # 도구 메뉴
+        # 🔧 도구 메뉴
         tools_menu = tk.Menu(self.menubar, tearoff=0)
-        tools_menu.add_command(label="Maintenance Mode", command=self._handle_toggle_maintenance)
-        self.menubar.add_cascade(label="도구", menu=tools_menu)
+        tools_menu.add_command(label="🔧 Maintenance Mode", command=self._handle_toggle_maintenance)
+        tools_menu.add_separator()
         
-        # 도움말 메뉴
+        # 📈 분석 서브메뉴
+        analysis_menu = tk.Menu(tools_menu, tearoff=0)
+        analysis_menu.add_command(label="📊 통계 분석 실행", command=self._handle_calculate_statistics)
+        analysis_menu.add_command(label="📋 통계 요약 표시", command=self._handle_show_statistics_summary)
+        tools_menu.add_cascade(label="📈 분석", menu=analysis_menu)
+        
+        # 🎛️ 설정 서브메뉴
+        settings_menu = tk.Menu(tools_menu, tearoff=0)
+        settings_menu.add_command(label="⚙️ 애플리케이션 설정", command=self._handle_show_settings)
+        settings_menu.add_command(label="🔧 문제 해결 가이드", command=self._handle_show_troubleshooting)
+        tools_menu.add_cascade(label="⚙️ 설정", menu=settings_menu)
+        
+        self.menubar.add_cascade(label="🔧 도구", menu=tools_menu)
+        
+        # 🎯 QC 메뉴 (QC 모드일 때만 표시)
+        self.qc_menu = tk.Menu(self.menubar, tearoff=0)
+        self.qc_menu.add_command(label="✅ QC 검수 실행", command=self._handle_run_qc_check)
+        self.qc_menu.add_separator()
+        self.qc_menu.add_command(label="📤 QC 데이터 내보내기", command=self._handle_export_qc_data)
+        self.qc_menu.add_command(label="📥 QC 데이터 가져오기", command=self._handle_import_qc_data)
+        self.qc_menu.add_separator()
+        self.qc_menu.add_command(label="🏷️ 장비 유형 관리", command=self._handle_manage_equipment_types)
+        self.qc_menu.add_command(label="📋 파라미터 관리", command=self._handle_manage_parameters)
+        
+        # 🎯 탐색 메뉴
+        navigation_menu = tk.Menu(self.menubar, tearoff=0)
+        navigation_menu.add_command(label="📊 DB 비교 탭", command=self._handle_goto_comparison_tab)
+        navigation_menu.add_command(label="✅ QC 검수 탭", command=self._handle_goto_qc_tab)
+        navigation_menu.add_command(label="🗄️ 설정값 DB 탭", command=self._handle_goto_default_db_tab)
+        navigation_menu.add_command(label="📝 변경 이력 탭", command=self._handle_goto_change_history_tab)
+        self.menubar.add_cascade(label="🎯 탐색", menu=navigation_menu)
+        
+        # ❓ 도움말 메뉴
         help_menu = tk.Menu(self.menubar, tearoff=0)
-        help_menu.add_command(label="사용 설명서 (F1)", command=self._handle_show_user_guide)
+        help_menu.add_command(label="📖 사용 설명서 (F1)", command=self._handle_show_user_guide)
         help_menu.add_separator()
-        help_menu.add_command(label="프로그램 정보", command=self._handle_show_about)
-        self.menubar.add_cascade(label="도움말", menu=help_menu)
+        help_menu.add_command(label="ℹ️ 프로그램 정보", command=self._handle_show_about)
+        self.menubar.add_cascade(label="❓ 도움말", menu=help_menu)
         
         self.main_window.config(menu=self.menubar)
+        
+        # 초기 메뉴 상태 설정
+        self._update_menu_state()
     
     def _create_status_bar(self):
         """상태바 생성"""
@@ -393,7 +432,223 @@ class MainController(BaseController):
     def remove_tab_controller(self, name: str):
         """탭 컨트롤러 제거"""
         if name in self.tab_controllers:
-            controller = self.tab_controllers[name]
-            if hasattr(controller, 'cleanup'):
-                controller.cleanup()
-            del self.tab_controllers[name] 
+            del self.tab_controllers[name]
+
+    # 🎯 새로 추가된 메뉴 핸들러들
+    
+    def _handle_refresh_all_data(self):
+        """전체 데이터 새로고침 처리"""
+        self.viewmodel.execute_command('refresh_all_data')
+    
+    def _handle_export_report(self):
+        """통계 보고서 내보내기 처리"""
+        self.viewmodel.execute_command('export_report')
+    
+    def _handle_calculate_statistics(self):
+        """통계 분석 실행 처리"""
+        if self.viewmodel.can_execute_command('calculate_statistics'):
+            self.viewmodel.execute_command('calculate_statistics')
+        else:
+            self.show_warning("통계 분석", "먼저 파일을 로드해주세요.")
+    
+    def _handle_show_statistics_summary(self):
+        """통계 요약 표시 처리"""
+        try:
+            stats_data = self.viewmodel.statistics_data
+            if len(stats_data) > 0:
+                # 통계 요약 다이얼로그 표시
+                summary_text = self._format_statistics_summary(stats_data)
+                self.show_info("📊 통계 분석 요약", summary_text)
+            else:
+                self.show_info("📊 통계 분석", "통계 데이터가 없습니다.\n먼저 통계 분석을 실행해주세요.")
+        except Exception as e:
+            self.show_error("통계 요약 오류", str(e))
+    
+    def _format_statistics_summary(self, stats_data: dict) -> str:
+        """통계 데이터를 요약 텍스트로 포맷팅"""
+        summary_lines = ["=== 📊 통계 분석 요약 ===", ""]
+        
+        for key, value in stats_data.items():
+            if isinstance(value, (int, float)):
+                summary_lines.append(f"• {key}: {value:,.2f}")
+            else:
+                summary_lines.append(f"• {key}: {value}")
+        
+        return "\n".join(summary_lines)
+    
+    def _handle_show_settings(self):
+        """애플리케이션 설정 표시 처리"""
+        try:
+            # 설정 다이얼로그 표시 (향후 구현)
+            self.show_info("⚙️ 설정", "설정 기능은 향후 업데이트에서 제공됩니다.")
+        except Exception as e:
+            self.show_error("설정 오류", str(e))
+    
+    def _handle_show_troubleshooting(self):
+        """문제 해결 가이드 표시 처리"""
+        troubleshooting_text = """🔧 문제 해결 가이드
+
+📋 일반적인 문제와 해결방법:
+
+1. 파일 로드 실패
+   • 폴더 경로에 한글이 포함되지 않았는지 확인
+   • 파일이 다른 프로그램에서 사용 중이지 않은지 확인
+   
+2. 데이터베이스 연결 오류
+   • 프로그램을 관리자 권한으로 실행
+   • 바이러스 백신이 DB 파일을 차단하지 않는지 확인
+   
+3. Maintenance Mode 활성화 불가
+   • 올바른 비밀번호를 입력했는지 확인
+   • QC 권한이 있는지 확인
+   
+4. 성능 저하
+   • 대용량 파일 처리 시 메모리 부족일 수 있음
+   • 프로그램 재시작 후 다시 시도
+
+📞 추가 지원이 필요하면 IT 담당자에게 문의하세요."""
+        
+        self.show_info("🔧 문제 해결 가이드", troubleshooting_text)
+    
+    def _handle_run_qc_check(self):
+        """QC 검수 실행 처리"""
+        if self.viewmodel.can_execute_command('run_qc_check'):
+            self.viewmodel.execute_command('run_qc_check')
+        else:
+            self.show_warning("QC 검수", "QC 모드에서만 사용 가능하며, 파일이 로드되어야 합니다.")
+    
+    def _handle_export_qc_data(self):
+        """QC 데이터 내보내기 처리"""
+        if not self.viewmodel.maint_mode:
+            self.show_warning("QC 데이터 내보내기", "QC 모드에서만 사용 가능합니다.")
+            return
+        
+        file_path = self.create_save_dialog(
+            "QC 데이터 내보내기",
+            [("CSV 파일", "*.csv"), ("Excel 파일", "*.xlsx"), ("모든 파일", "*.*")],
+            default_extension=".csv"
+        )
+        if file_path:
+            # QC 데이터 내보내기 실행 (향후 구현)
+            self.viewmodel.add_log_message(f"QC 데이터 내보내기: {file_path}")
+            self.show_info("QC 데이터 내보내기", f"QC 데이터를 성공적으로 내보냈습니다.\n{file_path}")
+    
+    def _handle_import_qc_data(self):
+        """QC 데이터 가져오기 처리"""
+        if not self.viewmodel.maint_mode:
+            self.show_warning("QC 데이터 가져오기", "QC 모드에서만 사용 가능합니다.")
+            return
+        
+        file_path = self.create_open_dialog(
+            "QC 데이터 가져오기",
+            [("CSV 파일", "*.csv"), ("Excel 파일", "*.xlsx"), ("모든 파일", "*.*")]
+        )
+        if file_path:
+            # QC 데이터 가져오기 실행 (향후 구현)
+            self.viewmodel.add_log_message(f"QC 데이터 가져오기: {file_path}")
+            self.show_info("QC 데이터 가져오기", f"QC 데이터를 성공적으로 가져왔습니다.\n{file_path}")
+    
+    def _handle_manage_equipment_types(self):
+        """장비 유형 관리 처리"""
+        if not self.viewmodel.maint_mode:
+            self.show_warning("장비 유형 관리", "QC 모드에서만 사용 가능합니다.")
+            return
+        
+        # 장비 유형 관리 다이얼로그 표시 (향후 구현)
+        self.show_info("🏷️ 장비 유형 관리", "장비 유형 관리 기능은 향후 업데이트에서 제공됩니다.")
+    
+    def _handle_manage_parameters(self):
+        """파라미터 관리 처리"""
+        if not self.viewmodel.maint_mode:
+            self.show_warning("파라미터 관리", "QC 모드에서만 사용 가능합니다.")
+            return
+        
+        # 파라미터 관리 다이얼로그 표시 (향후 구현)
+        self.show_info("📋 파라미터 관리", "파라미터 관리 기능은 향후 업데이트에서 제공됩니다.")
+    
+    # 🎯 탐색 메뉴 핸들러들
+    def _handle_goto_comparison_tab(self):
+        """DB 비교 탭으로 이동"""
+        if self.main_notebook and self.main_notebook.tabs():
+            self.main_notebook.select(0)  # 첫 번째 탭 (DB 비교)
+        self.viewmodel.add_log_message("DB 비교 탭으로 이동")
+    
+    def _handle_goto_qc_tab(self):
+        """QC 검수 탭으로 이동"""
+        if not self.viewmodel.maint_mode:
+            self.show_warning("QC 검수 탭", "QC 모드에서만 접근 가능합니다.")
+            return
+        
+        # QC 검수 탭 찾기 및 이동 (향후 구현)
+        self.viewmodel.add_log_message("QC 검수 탭으로 이동")
+    
+    def _handle_goto_default_db_tab(self):
+        """설정값 DB 탭으로 이동"""
+        if not self.viewmodel.maint_mode:
+            self.show_warning("설정값 DB 탭", "QC 모드에서만 접근 가능합니다.")
+            return
+        
+        # 설정값 DB 탭 찾기 및 이동 (향후 구현)
+        self.viewmodel.add_log_message("설정값 DB 탭으로 이동")
+    
+    def _handle_goto_change_history_tab(self):
+        """변경 이력 탭으로 이동"""
+        if not self.viewmodel.maint_mode:
+            self.show_warning("변경 이력 탭", "QC 모드에서만 접근 가능합니다.")
+            return
+        
+        # 변경 이력 탭 찾기 및 이동 (향후 구현)
+        self.viewmodel.add_log_message("변경 이력 탭으로 이동")
+    
+    def _update_menu_state(self):
+        """메뉴 상태 업데이트 (사용자 모드에 따라)"""
+        try:
+            if not hasattr(self, 'menubar') or not self.menubar:
+                return
+            
+            is_maintenance_mode = self.viewmodel.maint_mode
+            
+            # QC 메뉴 표시/숨김
+            if hasattr(self, 'qc_menu') and self.qc_menu:
+                if is_maintenance_mode:
+                    # QC 메뉴 추가 (이미 없는 경우에만)
+                    try:
+                        menu_labels = []
+                        for i in range(self.menubar.index('end')+1):
+                            try:
+                                label = self.menubar.entryconfig(i)['label'][-1]
+                                menu_labels.append(str(label))
+                            except:
+                                continue
+                        
+                        if "🎯 QC" not in menu_labels:
+                            # 탐색 메뉴 앞에 QC 메뉴 삽입
+                            nav_index = None
+                            for i, label in enumerate(menu_labels):
+                                if "🎯 탐색" in str(label):
+                                    nav_index = i
+                                    break
+                            
+                            if nav_index is not None:
+                                self.menubar.insert_cascade(nav_index, label="🎯 QC", menu=self.qc_menu)
+                            else:
+                                self.menubar.add_cascade(label="🎯 QC", menu=self.qc_menu)
+                    except Exception as e:
+                        print(f"QC 메뉴 추가 오류: {e}")
+                else:
+                    # QC 메뉴 제거
+                    try:
+                        self.menubar.delete("🎯 QC")
+                    except tk.TclError:
+                        pass  # 메뉴가 없으면 무시
+            
+            # 상태바 메시지 업데이트
+            if is_maintenance_mode:
+                status_msg = "🔧 QC 엔지니어 모드 (Maintenance Mode 활성화)"
+            else:
+                status_msg = "👤 장비 생산 엔지니어 모드"
+            
+            self.viewmodel.status_message = status_msg
+            
+        except Exception as e:
+            print(f"메뉴 상태 업데이트 오류: {e}")

@@ -3,11 +3,19 @@
 
 from .base_component import BaseComponent, ContainerComponent, FormComponent
 from .treeview_component import TreeViewComponent, create_enhanced_treeview
+from .menu_component import MenuComponent
+from .filter_component import FilterComponent
+from .toolbar_component import ToolbarComponent, ContextualToolbar, StatusToolbar
 
 __all__ = [
     'BaseComponent',
     'ContainerComponent', 
     'FormComponent',
     'TreeViewComponent',
-    'create_enhanced_treeview'
-] 
+    'create_enhanced_treeview',
+    'MenuComponent',
+    'FilterComponent',
+    'ToolbarComponent',
+    'ContextualToolbar', 
+    'StatusToolbar',
+]

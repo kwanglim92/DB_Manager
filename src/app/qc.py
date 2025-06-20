@@ -22,70 +22,120 @@ class QCValidator:
 
     @staticmethod
     def check_missing_values(df, equipment_type):
-        """누락된 값 검사"""
+        """누락된 값 검사 - Default DB 구조에 맞게 수정"""
         results = []
-        for col in df.columns:
-            missing_count = df[col].isna().sum()
-            if missing_count > 0:
-                results.append({
-                    "parameter": col,
-                    "issue_type": "누락값",
-                    "description": f"{missing_count}개의 누락된 값이 있습니다.",
-                    "severity": "높음" if missing_count > 5 else "중간"
-                })
+        
+        # 필수 컬럼들이 누락되었는지 확인
+        essential_cols = ['parameter_name', 'default_value']
+        for col in essential_cols:
+            if col in df.columns:
+                missing_count = df[col].isna().sum() + (df[col] == '').sum()
+                if missing_count > 0:
+                    results.append({
+                        "parameter": col,
+                        "issue_type": "누락값",
+                        "description": f"필수 컬럼 '{col}'에 {missing_count}개의 누락된 값이 있습니다.",
+                        "severity": "높음"
+                    })
+        
+        # min_spec, max_spec 누락 확인 (선택적)
+        optional_cols = ['min_spec', 'max_spec']
+        for col in optional_cols:
+            if col in df.columns:
+                missing_count = df[col].isna().sum() + (df[col] == '').sum()
+                if missing_count > 0:
+                    results.append({
+                        "parameter": col,
+                        "issue_type": "누락값",
+                        "description": f"선택적 컬럼 '{col}'에 {missing_count}개의 누락된 값이 있습니다.",
+                        "severity": "낮음"
+                    })
+        
         return results
 
     @staticmethod
     def check_outliers(df, equipment_type):
-        """이상치 검사 (3-시그마 기준)"""
+        """이상치 검사 - 신뢰도 및 발생횟수 기준"""
         results = []
-        numeric_cols = df.select_dtypes(include=['number']).columns
-
-        for col in numeric_cols:
-            mean = df[col].mean()
-            std = df[col].std()
-
-            if pd.isna(std) or std == 0:
-                continue
-
-            lower_bound = mean - 3 * std
-            upper_bound = mean + 3 * std
-
-            outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)]
-            outlier_count = len(outliers)
-
-            if outlier_count > 0:
-                results.append({
-                    "parameter": col,
-                    "issue_type": "이상치",
-                    "description": f"{outlier_count}개의 이상치가 있습니다. (평균: {mean:.2f}, 표준편차: {std:.2f})",
-                    "severity": "높음" if outlier_count > 3 else "중간"
-                })
-
+        
+        # 신뢰도가 낮은 파라미터 확인
+        if 'confidence_score' in df.columns:
+            low_confidence = df[df['confidence_score'] < 0.5]
+            if len(low_confidence) > 0:
+                for _, row in low_confidence.iterrows():
+                    results.append({
+                        "parameter": row['parameter_name'],
+                        "issue_type": "낮은 신뢰도",
+                        "description": f"신뢰도가 {row['confidence_score']*100:.1f}%로 낮습니다 (발생횟수: {row.get('occurrence_count', 'N/A')}/{row.get('total_files', 'N/A')})",
+                        "severity": "중간" if row['confidence_score'] < 0.3 else "낮음"
+                    })
+        
+        # 발생횟수가 1인 파라미터 (단일 소스)
+        if 'occurrence_count' in df.columns and 'total_files' in df.columns:
+            single_source = df[df['occurrence_count'] == 1]
+            if len(single_source) > 0:
+                for _, row in single_source.iterrows():
+                    results.append({
+                        "parameter": row['parameter_name'],
+                        "issue_type": "단일 소스",
+                        "description": f"단일 파일에서만 발견된 파라미터입니다 (1/{row.get('total_files', 'N/A')} 파일)",
+                        "severity": "낮음"
+                    })
+        
         return results
 
     @staticmethod
     def check_duplicate_entries(df, equipment_type):
-        """중복 항목 검사"""
+        """중복 항목 검사 - 파라미터명 기준"""
         results = []
-        dup_count = len(df[df.duplicated()])
-
-        if dup_count > 0:
-            results.append({
-                "parameter": "전체",
-                "issue_type": "중복 항목",
-                "description": f"{dup_count}개의 중복 항목이 있습니다.",
-                "severity": "중간"
-            })
-
+        
+        if 'parameter_name' in df.columns:
+            duplicated_params = df['parameter_name'].duplicated()
+            dup_count = duplicated_params.sum()
+            
+            if dup_count > 0:
+                dup_names = df[duplicated_params]['parameter_name'].tolist()
+                results.append({
+                    "parameter": "전체",
+                    "issue_type": "중복 파라미터",
+                    "description": f"{dup_count}개의 중복 파라미터명이 있습니다: {', '.join(dup_names[:3])}{'...' if len(dup_names) > 3 else ''}",
+                    "severity": "높음"
+                })
+        
         return results
 
     @staticmethod
     def check_data_consistency(df, equipment_type):
-        """데이터 일관성 검사"""
+        """데이터 일관성 검사 - 사양 범위 검사"""
         results = []
-        # 장비 유형에 따른 특정 검사 로직
-        # 예: 특정 열 간의 관계 검사
+        
+        # min_spec과 max_spec이 모두 있는 경우 범위 검사
+        if all(col in df.columns for col in ['min_spec', 'max_spec', 'default_value']):
+            for _, row in df.iterrows():
+                try:
+                    if pd.notna(row['min_spec']) and pd.notna(row['max_spec']) and pd.notna(row['default_value']):
+                        min_val = float(row['min_spec'])
+                        max_val = float(row['max_spec'])
+                        default_val = float(row['default_value'])
+                        
+                        if min_val > max_val:
+                            results.append({
+                                "parameter": row['parameter_name'],
+                                "issue_type": "사양 오류",
+                                "description": f"최소값({min_val})이 최대값({max_val})보다 큽니다.",
+                                "severity": "높음"
+                            })
+                        elif not (min_val <= default_val <= max_val):
+                            results.append({
+                                "parameter": row['parameter_name'],
+                                "issue_type": "범위 초과",
+                                "description": f"설정값({default_val})이 사양 범위({min_val}~{max_val})를 벗어납니다.",
+                                "severity": "중간"
+                            })
+                except (ValueError, TypeError):
+                    # 숫자가 아닌 값은 무시
+                    continue
+        
         return results
 
     @staticmethod
@@ -111,21 +161,55 @@ def add_qc_check_functions_to_class(cls):
         qc_tab = ttk.Frame(self.main_notebook)
         self.main_notebook.add(qc_tab, text="QC 검수")
 
-        # 검수 대상 선택 프레임
-        top_frame = ttk.LabelFrame(qc_tab, text="검수 대상 선택", padding=10)
-        top_frame.pack(fill=tk.X, padx=5, pady=5)
+        # 상단 컨트롤 프레임
+        control_frame = ttk.Frame(qc_tab)
+        control_frame.pack(fill=tk.X, padx=5, pady=5)
 
-        type_frame = ttk.Frame(top_frame)
-        type_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(type_frame, text="장비 유형:").pack(side=tk.LEFT, padx=5)
+        # 장비 유형 선택 프레임
+        type_frame = ttk.LabelFrame(control_frame, text="장비 유형 및 검수 모드 선택", padding=10)
+        type_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+
+        # 상단 라인: 장비 유형 선택
+        top_line = ttk.Frame(type_frame)
+        top_line.pack(fill=tk.X, pady=(0, 5))
+
+        # 장비 유형 콤보박스
+        ttk.Label(top_line, text="장비 유형:").pack(side=tk.LEFT, padx=(0, 5))
         self.qc_type_var = tk.StringVar()
-        self.qc_type_combobox = ttk.Combobox(type_frame, textvariable=self.qc_type_var, state="readonly", width=30)
-        self.qc_type_combobox.pack(side=tk.LEFT, padx=5)
+        self.qc_type_combobox = ttk.Combobox(top_line, textvariable=self.qc_type_var, state="readonly", width=20)
+        self.qc_type_combobox.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # 🆕 새로고침 버튼 추가
+        refresh_btn = ttk.Button(top_line, text="🔄 목록 새로고침", command=self.refresh_qc_equipment_types)
+        refresh_btn.pack(side=tk.LEFT, padx=(5, 10))
 
-        button_frame = ttk.Frame(top_frame)
-        button_frame.pack(fill=tk.X, pady=10)
-        ttk.Button(button_frame, text="검수 실행", command=self.perform_qc_check).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="검수 결과 내보내기", command=self.export_qc_results).pack(side=tk.LEFT, padx=5)
+        # 하단 라인: 검수 모드 선택
+        bottom_line = ttk.Frame(type_frame)
+        bottom_line.pack(fill=tk.X, pady=(5, 0))
+
+        # 🆕 검수 모드 선택
+        ttk.Label(bottom_line, text="검수 모드:").pack(side=tk.LEFT, padx=(0, 5))
+        self.qc_mode_var = tk.StringVar(value="performance")
+        
+        performance_radio = ttk.Radiobutton(bottom_line, text="Performance 항목만", 
+                                          variable=self.qc_mode_var, value="performance")
+        performance_radio.pack(side=tk.LEFT, padx=(0, 10))
+        
+        full_radio = ttk.Radiobutton(bottom_line, text="전체 항목", 
+                                   variable=self.qc_mode_var, value="full")
+        full_radio.pack(side=tk.LEFT, padx=(0, 10))
+
+        # QC 실행 버튼 프레임
+        action_frame = ttk.Frame(control_frame)
+        action_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(5, 0))
+
+        # QC 실행 버튼
+        qc_btn = ttk.Button(action_frame, text="QC 검수 실행", command=self.perform_qc_check)
+        qc_btn.pack(pady=(0, 5))
+
+        # 🆕 파일 선택 버튼 (업로드된 파일 선택)
+        file_select_btn = ttk.Button(action_frame, text="검수 파일 선택", command=self.select_qc_files)
+        file_select_btn.pack()
 
         # 검수 결과 프레임
         middle_frame = ttk.LabelFrame(qc_tab, text="검수 결과", padding=10)
@@ -162,14 +246,41 @@ def add_qc_check_functions_to_class(cls):
         # 장비 유형 목록 로드
         self.load_equipment_types_for_qc()
 
+    def refresh_qc_equipment_types(self):
+        """QC 탭의 장비 유형 목록 수동 새로고침"""
+        try:
+            self.update_log("🔄 QC 탭 장비 유형 목록 수동 새로고침 시작...")
+            
+            # 현재 선택된 장비 유형 저장
+            current_selection = self.qc_type_var.get()
+            
+            # 장비 유형 목록 다시 로드
+            self.load_equipment_types_for_qc()
+            
+            # 이전 선택이 여전히 존재하면 복원
+            if current_selection and current_selection in self.qc_type_combobox['values']:
+                self.qc_type_combobox.set(current_selection)
+                self.update_log(f"✅ QC 탭 새로고침 완료 - 이전 선택 '{current_selection}' 복원")
+            else:
+                self.update_log("✅ QC 탭 새로고침 완료 - 새 목록으로 업데이트")
+            
+            # 성공 메시지
+            messagebox.showinfo("새로고침 완료", "QC 탭의 장비 유형 목록이 최신 상태로 업데이트되었습니다.")
+            
+        except Exception as e:
+            error_msg = f"QC 탭 새로고침 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("새로고침 오류", error_msg)
+
     def load_equipment_types_for_qc(self):
         """QC 검수를 위한 장비 유형 목록 로드"""
+        conn = None
         try:
             conn = self.get_db_connection()
             cursor = conn.cursor()
 
-            # 장비 유형 정보 조회
-            cursor.execute("SELECT id, name FROM equipment_types ORDER BY name")
+            # 장비 유형 정보 조회 (실제 테이블명에 맞게 수정)
+            cursor.execute("SELECT id, type_name FROM Equipment_Types ORDER BY type_name")
             equipment_types = cursor.fetchall()
 
             # 콤보박스 업데이트
@@ -182,13 +293,16 @@ def add_qc_check_functions_to_class(cls):
                 self.qc_type_combobox['values'] = []
                 messagebox.showinfo("알림", "등록된 장비 유형이 없습니다.")
 
-            conn.close()
         except Exception as e:
             messagebox.showerror("오류", f"장비 유형 로드 중 오류 발생: {str(e)}")
+        finally:
+            if conn:
+                conn.close()
 
     def perform_qc_check(self):
         """QC 검수 실행"""
         selected_type = self.qc_type_var.get()
+        qc_mode = self.qc_mode_var.get()  # 🆕 검수 모드 확인
 
         if not selected_type:
             messagebox.showinfo("알림", "장비 유형을 선택해주세요.")
@@ -211,26 +325,32 @@ def add_qc_check_functions_to_class(cls):
 
             # 선택된 장비 유형의 데이터 로드
             equipment_type_id = self.equipment_types_for_qc[selected_type]
-            conn = self.get_db_connection()
-            cursor = conn.cursor()
-
-            # 쿼리 실행
-            query = """
-            SELECT p.name as parameter_name, p.min_value, p.max_value, v.value, v.timestamp
-            FROM parameters p
-            LEFT JOIN parameter_values v ON p.id = v.parameter_id
-            WHERE p.equipment_type_id = ?
-            """
-            cursor.execute(query, (equipment_type_id,))
-            data = cursor.fetchall()
+            
+            # 🆕 Performance 모드에 따른 데이터 필터링
+            performance_only = (qc_mode == "performance")
+            
+            # DB 스키마 인스턴스를 통해 데이터 로드
+            from app.schema import DBSchema
+            db_schema = DBSchema()
+            
+            # Performance 모드 또는 전체 모드에 따라 데이터 로드
+            data = db_schema.get_default_values(equipment_type_id, performance_only=performance_only)
 
             if not data:
                 loading_dialog.close()
-                messagebox.showinfo("알림", "검수할 데이터가 없습니다.")
+                mode_text = "Performance 항목" if performance_only else "전체 항목"
+                messagebox.showinfo("알림", f"장비 유형 '{selected_type}'에 대한 {mode_text} 검수할 데이터가 없습니다.")
                 return
 
-            # 데이터프레임 생성
-            df = pd.DataFrame(data, columns=["parameter_name", "min_value", "max_value", "value", "timestamp"])
+            # 데이터프레임 생성 (실제 데이터 구조에 맞게 수정)
+            # data structure: (id, parameter_name, default_value, min_spec, max_spec, type_name,
+            #                  occurrence_count, total_files, confidence_score, source_files, description,
+            #                  module_name, part_name, item_type, is_performance)
+            df = pd.DataFrame(data, columns=[
+                "id", "parameter_name", "default_value", "min_spec", "max_spec", "type_name",
+                "occurrence_count", "total_files", "confidence_score", "source_files", "description",
+                "module_name", "part_name", "item_type", "is_performance"
+            ])
 
             # QC 검사 실행 (50%)
             loading_dialog.update_progress(50, "QC 검사 실행 중...")
@@ -250,15 +370,20 @@ def add_qc_check_functions_to_class(cls):
 
             # 완료
             loading_dialog.update_progress(100, "완료")
-            conn.close()
             loading_dialog.close()
 
-            self.update_log(f"[QC 검수] 장비 유형 '{selected_type}'에 대한 QC 검수가 완료되었습니다. 총 {len(results)}개의 이슈 발견.")
+            # 🆕 검수 모드 정보 포함하여 로그 업데이트
+            mode_text = "Performance 항목" if performance_only else "전체 항목"
+            self.update_log(f"[QC 검수] 장비 유형 '{selected_type}' ({mode_text})에 대한 QC 검수가 완료되었습니다. 총 {len(results)}개의 이슈 발견.")
 
         except Exception as e:
             if 'loading_dialog' in locals():
                 loading_dialog.close()
-            messagebox.showerror("오류", f"QC 검수 중 오류 발생: {str(e)}")
+            error_msg = f"QC 검수 중 오류 발생: {str(e)}"
+            messagebox.showerror("오류", error_msg)
+            self.update_log(f"❌ {error_msg}")
+            import traceback
+            traceback.print_exc()
 
     def show_qc_statistics(self, results):
         """QC 검수 결과 통계 표시"""
@@ -372,6 +497,195 @@ def add_qc_check_functions_to_class(cls):
 
         except Exception as e:
             messagebox.showerror("오류", f"파일 저장 중 오류 발생: {str(e)}")
+
+    def select_qc_files(self):
+        """QC 검수를 위한 파일 선택 (업로드된 파일 중에서 선택)"""
+        try:
+            # 업로드된 파일 목록 확인
+            if not hasattr(self, 'uploaded_files') or not self.uploaded_files:
+                messagebox.showinfo("알림", "먼저 '파일 > 폴더 열기'를 통해 파일을 업로드해주세요.")
+                return
+            
+            # 파일 선택 대화상자 생성
+            file_selection_window = tk.Toplevel(self.window)
+            file_selection_window.title("QC 검수 파일 선택")
+            file_selection_window.geometry("500x400")
+            file_selection_window.transient(self.window)
+            file_selection_window.grab_set()
+            
+            # 설명 레이블
+            ttk.Label(file_selection_window, text="QC 검수를 수행할 파일을 선택하세요 (최대 6개):").pack(pady=10)
+            
+            # 파일 목록 프레임
+            files_frame = ttk.Frame(file_selection_window)
+            files_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+            
+            # 스크롤바가 있는 체크박스 리스트
+            canvas = tk.Canvas(files_frame)
+            scrollbar = ttk.Scrollbar(files_frame, orient="vertical", command=canvas.yview)
+            scrollable_frame = ttk.Frame(canvas)
+            
+            scrollable_frame.bind(
+                "<Configure>",
+                lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            )
+            
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+            
+            # 체크박스 변수들
+            self.qc_file_vars = {}
+            
+            # 업로드된 파일들에 대한 체크박스 생성
+            for i, (filename, filepath) in enumerate(self.uploaded_files.items()):
+                var = tk.BooleanVar()
+                self.qc_file_vars[filename] = var
+                
+                checkbox = ttk.Checkbutton(
+                    scrollable_frame, 
+                    text=f"{filename}", 
+                    variable=var
+                )
+                checkbox.pack(anchor="w", padx=10, pady=2)
+            
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+            
+            # 버튼 프레임
+            button_frame = ttk.Frame(file_selection_window)
+            button_frame.pack(fill=tk.X, padx=10, pady=10)
+            
+            def apply_selection():
+                selected_files = []
+                for filename, var in self.qc_file_vars.items():
+                    if var.get():
+                        selected_files.append(filename)
+                
+                if not selected_files:
+                    messagebox.showwarning("경고", "최소 1개의 파일을 선택해주세요.")
+                    return
+                
+                if len(selected_files) > 6:
+                    messagebox.showwarning("경고", "최대 6개의 파일만 선택할 수 있습니다.")
+                    return
+                
+                # 선택된 파일 정보 저장
+                self.selected_qc_files = {name: self.uploaded_files[name] for name in selected_files}
+                
+                messagebox.showinfo("선택 완료", f"{len(selected_files)}개의 파일이 QC 검수용으로 선택되었습니다.")
+                file_selection_window.destroy()
+            
+            def select_all():
+                for var in self.qc_file_vars.values():
+                    var.set(True)
+            
+            def deselect_all():
+                for var in self.qc_file_vars.values():
+                    var.set(False)
+            
+            # 버튼들
+            ttk.Button(button_frame, text="전체 선택", command=select_all).pack(side=tk.LEFT, padx=5)
+            ttk.Button(button_frame, text="전체 해제", command=deselect_all).pack(side=tk.LEFT, padx=5)
+            ttk.Button(button_frame, text="취소", command=file_selection_window.destroy).pack(side=tk.RIGHT, padx=5)
+            ttk.Button(button_frame, text="선택 완료", command=apply_selection).pack(side=tk.RIGHT, padx=5)
+            
+        except Exception as e:
+            error_msg = f"파일 선택 중 오류 발생: {str(e)}"
+            messagebox.showerror("오류", error_msg)
+            self.update_log(f"❌ {error_msg}")
+
+    def perform_qc_check_enhanced(self):
+        """개선된 QC 검수 실행 (Performance 모드 지원)"""
+        selected_type = self.qc_type_var.get()
+        qc_mode = self.qc_mode_var.get()  # Performance 또는 full
+
+        if not selected_type:
+            messagebox.showinfo("알림", "장비 유형을 선택해주세요.")
+            return
+
+        try:
+            # 로딩 대화상자 표시
+            loading_dialog = LoadingDialog(self.window)
+            self.window.update_idletasks()
+
+            # 트리뷰 초기화
+            for item in self.qc_result_tree.get_children():
+                self.qc_result_tree.delete(item)
+
+            # 통계 및 차트 프레임 초기화
+            for widget in self.stats_frame.winfo_children():
+                widget.destroy()
+            for widget in self.chart_frame.winfo_children():
+                widget.destroy()
+
+            # 선택된 장비 유형의 데이터 로드
+            equipment_type_id = self.equipment_types_for_qc[selected_type]
+            
+            # Performance 모드에 따른 데이터 필터링
+            performance_only = (qc_mode == "performance")
+            
+            # DB 스키마 인스턴스를 통해 데이터 로드
+            from app.schema import DBSchema
+            db_schema = DBSchema()
+            
+            # Performance 모드 또는 전체 모드에 따라 데이터 로드
+            data = db_schema.get_default_values(equipment_type_id, performance_only=performance_only)
+
+            if not data:
+                loading_dialog.close()
+                mode_text = "Performance 항목" if performance_only else "전체 항목"
+                messagebox.showinfo("알림", f"장비 유형 '{selected_type}'에 대한 {mode_text} 검수할 데이터가 없습니다.")
+                return
+
+            # 데이터프레임 생성
+            # data structure: (id, parameter_name, default_value, min_spec, max_spec, type_name,
+            #                  occurrence_count, total_files, confidence_score, source_files, description,
+            #                  module_name, part_name, item_type, is_performance)
+            df = pd.DataFrame(data, columns=[
+                "id", "parameter_name", "default_value", "min_spec", "max_spec", "type_name",
+                "occurrence_count", "total_files", "confidence_score", "source_files", "description",
+                "module_name", "part_name", "item_type", "is_performance"
+            ])
+
+            # QC 검사 실행 (50%)
+            loading_dialog.update_progress(50, "QC 검사 실행 중...")
+            results = QCValidator.run_all_checks(df, selected_type)
+
+            # 결과 트리뷰에 표시 (75%)
+            loading_dialog.update_progress(75, "결과 업데이트 중...")
+            for i, result in enumerate(results):
+                self.qc_result_tree.insert(
+                    "", "end", 
+                    values=(result["parameter"], result["issue_type"], result["description"], result["severity"])
+                )
+
+            # 통계 정보 표시 (90%)
+            loading_dialog.update_progress(90, "통계 정보 생성 중...")
+            self.show_qc_statistics(results)
+
+            # 완료
+            loading_dialog.update_progress(100, "완료")
+            loading_dialog.close()
+
+            # 검수 모드 정보 포함하여 로그 업데이트
+            mode_text = "Performance 항목" if performance_only else "전체 항목"
+            params_count = len(data)
+            performance_count = sum(1 for row in data if row[14]) if qc_mode == "full" else params_count  # is_performance 컬럼
+            
+            self.update_log(f"[QC 검수] 장비 유형 '{selected_type}' ({mode_text}: {params_count}개 파라미터)에 대한 QC 검수가 완료되었습니다. 총 {len(results)}개의 이슈 발견.")
+            
+            # Performance 모드별 추가 정보
+            if qc_mode == "full" and performance_count > 0:
+                self.update_log(f"  ℹ️ 참고: 이 장비 유형에는 {performance_count}개의 Performance 중요 파라미터가 있습니다.")
+
+        except Exception as e:
+            if 'loading_dialog' in locals():
+                loading_dialog.close()
+            error_msg = f"QC 검수 중 오류 발생: {str(e)}"
+            messagebox.showerror("오류", error_msg)
+            self.update_log(f"❌ {error_msg}")
+            import traceback
+            traceback.print_exc()
 
     # 클래스에 함수 추가
     cls.create_qc_check_tab = create_qc_check_tab

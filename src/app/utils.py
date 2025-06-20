@@ -256,7 +256,7 @@ def create_backup(file_path, backup_dir=None):
 
     Args:
         file_path: 백업할 파일 경로
-        backup_dir: 백업 디렉토리 (기본값: 파일과 같은 디렉토리)
+        backup_dir: 백업 디렉토리 (설정값: 파일과 같은 디렉토리)
 
     Returns:
         백업 파일 경로
@@ -334,3 +334,70 @@ def change_maintenance_password(current_password, new_password):
         # 지금은 간단하게 구현
         return True
     return False
+
+def center_dialog_on_parent(dialog, parent):
+    """
+    다이얼로그를 부모 창 중앙에 위치시킵니다.
+    
+    Args:
+        dialog: 위치를 조정할 다이얼로그 윈도우
+        parent: 부모 윈도우
+    """
+    # 다이얼로그와 부모 창의 크기 정보 업데이트
+    dialog.update_idletasks()
+    parent.update_idletasks()
+    
+    # 부모 창의 위치와 크기
+    parent_x = parent.winfo_x()
+    parent_y = parent.winfo_y()
+    parent_width = parent.winfo_width()
+    parent_height = parent.winfo_height()
+    
+    # 다이얼로그의 크기
+    dialog_width = dialog.winfo_reqwidth()
+    dialog_height = dialog.winfo_reqheight()
+    
+    # 중앙 위치 계산
+    x = parent_x + (parent_width - dialog_width) // 2
+    y = parent_y + (parent_height - dialog_height) // 2
+    
+    # 화면 경계 확인 및 조정
+    screen_width = dialog.winfo_screenwidth()
+    screen_height = dialog.winfo_screenheight()
+    
+    # 화면 밖으로 나가지 않도록 조정
+    if x < 0:
+        x = 0
+    elif x + dialog_width > screen_width:
+        x = screen_width - dialog_width
+        
+    if y < 0:
+        y = 0
+    elif y + dialog_height > screen_height:
+        y = screen_height - dialog_height
+    
+    # 다이얼로그 위치 설정
+    dialog.geometry(f"+{x}+{y}")
+
+def create_centered_dialog(parent, title="다이얼로그", geometry="400x300"):
+    """
+    부모 창 중앙에 위치한 다이얼로그를 생성합니다.
+    
+    Args:
+        parent: 부모 윈도우
+        title: 다이얼로그 제목
+        geometry: 다이얼로그 크기 ("widthxheight" 형식)
+        
+    Returns:
+        tk.Toplevel: 생성된 다이얼로그
+    """
+    dialog = tk.Toplevel(parent)
+    dialog.title(title)
+    dialog.geometry(geometry)
+    dialog.transient(parent)
+    dialog.grab_set()
+    
+    # 부모 창 중앙에 배치
+    center_dialog_on_parent(dialog, parent)
+    
+    return dialog

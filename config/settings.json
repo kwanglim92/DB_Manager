@@ -2,5 +2,23 @@
     "maint_password_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
     "page_size": 100,
     "auto_backup": true,
-    "backup_interval_days": 7
+    "backup_interval_days": 7,
+    "use_new_services": {
+        "equipment_service": true,
+        "parameter_service": false,
+        "data_processing_service": false,
+        "validation_service": false,
+        "qc_service": false
+    },
+    "service_config": {
+        "cache": {
+            "max_size": 1000,
+            "default_ttl": 300
+        },
+        "logging": {
+            "level": "INFO",
+            "file_logging": false,
+            "log_file_path": "logs/services.log"
+        }
+    }
 }

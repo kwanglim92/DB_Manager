@@ -159,7 +159,7 @@ def add_file_handler_functions_to_class(cls):
             cursor = conn.cursor()
 
             # 장비 유형 목록 조회
-            cursor.execute("SELECT id, name FROM equipment_types ORDER BY name")
+            cursor.execute("SELECT id, type_name FROM Equipment_Types ORDER BY type_name")
             equipment_types = cursor.fetchall()
 
             if not equipment_types:
@@ -221,7 +221,7 @@ def add_file_handler_functions_to_class(cls):
                 if selection:
                     selected_text = listbox.get(selection[0])
                     # ID 부분 추출
-                    selected_id[0] = int(selected_text.split("ID: ")[1].strip(")")
+                    selected_id[0] = int(selected_text.split("ID: ")[1].strip(")"))
                 dialog.destroy()
 
             # 취소 버튼 이벤트 핸들러
