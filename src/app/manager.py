@@ -8,7 +8,7 @@ from app.schema import DBSchema
 from app.loading import LoadingDialog
 from app.qc import add_qc_check_functions_to_class
 from app.enhanced_qc import add_enhanced_qc_functions_to_class
-from app.defaultdb import add_default_db_functions_to_class
+# from app.defaultdb import add_default_db_functions_to_class  # 🚫 Performance 기능 충돌로 비활성화
 from app.history import add_change_history_functions_to_class
 from app.utils import create_treeview_with_scrollbar, create_label_entry_pair, format_num_value
 
@@ -58,7 +58,7 @@ class DBManager:
         
         add_qc_check_functions_to_class(DBManager)
         add_enhanced_qc_functions_to_class(DBManager)
-        add_default_db_functions_to_class(DBManager)
+        # add_default_db_functions_to_class(DBManager)  # 🚫 Performance 기능 충돌로 비활성화
         add_change_history_functions_to_class(DBManager)
         
         # 🆕 아이콘 로드 개선 (기존 코드와 호환)
@@ -360,33 +360,38 @@ class DBManager:
 
     def enable_maint_features(self):
         """유지보수 모드 활성화 - QC 엔지니어용 탭들을 추가합니다."""
-        import threading
-        loading_dialog = LoadingDialog(self.window)
-        
-        def worker():
-            try:
-                self.maint_mode = True
-                
-                loading_dialog.update_progress(20, "QC 검수 탭 생성 중...")
-                self.window.after(0, self.create_qc_check_tab)
-                
-                loading_dialog.update_progress(50, "Default DB 관리 탭 생성 중...")
-                self.window.after(0, self.create_default_db_tab)
-                
-                loading_dialog.update_progress(80, "변경 이력 관리 탭 생성 중...")
-                self.window.after(0, self.create_change_history_tab)
-                
-                loading_dialog.update_progress(100, "완료")
-                self.window.after(100, loading_dialog.close)
-                
-                self.window.after(200, lambda: self.update_log("QC 엔지니어 모드가 활성화되었습니다."))
-                self.window.after(200, lambda: self.status_bar.config(text="QC 엔지니어 모드"))
-                
-            except Exception as e:
-                self.window.after(0, loading_dialog.close)
-                self.window.after(0, lambda: messagebox.showerror("오류", f"유지보수 모드 활성화 중 오류 발생: {str(e)}"))
-        
-        threading.Thread(target=worker, daemon=True).start()
+        try:
+            self.maint_mode = True
+            self.update_log("🚀 유지보수 모드 활성화 시작...")
+            
+            # QC 검수 탭 생성
+            self.update_log("📋 QC 검수 탭 생성 중...")
+            self.create_qc_check_tab()
+            
+            # Default DB 관리 탭 생성 (동기적 실행)
+            self.update_log("🔧 Default DB 관리 탭 생성 중...")
+            self.create_default_db_tab()
+            
+            # 변경 이력 관리 탭 생성
+            self.update_log("📊 변경 이력 관리 탭 생성 중...")
+            self.create_change_history_tab()
+            
+            # 상태 업데이트
+            self.update_log("✅ QC 엔지니어 모드가 활성화되었습니다.")
+            self.status_bar.config(text="QC 엔지니어 모드")
+            
+            # Performance 기능 확인 메시지
+            self.update_log("🎯 Performance 기능이 활성화되었습니다!")
+            self.update_log("   - Default DB 관리 탭에서 Performance 관리 버튼들을 확인하세요.")
+            self.update_log("   - 트리뷰에서 가로 스크롤하여 🎯 Performance 컬럼을 확인하세요.")
+            
+        except Exception as e:
+            error_msg = f"유지보수 모드 활성화 중 오류 발생: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", error_msg)
+            print(f"DEBUG - enable_maint_features error: {e}")
+            import traceback
+            traceback.print_exc()
 
     def create_comparison_tabs(self):
         """비교 관련 탭 생성 - 기본 기능만"""
