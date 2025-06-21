@@ -284,6 +284,48 @@ class DBSchema:
             
             return cursor.fetchall()
 
+    def get_parameter_by_id(self, parameter_id, conn_override=None):
+        """
+        특정 ID의 파라미터 정보를 반환합니다.
+        
+        Args:
+            parameter_id (int): 파라미터 ID
+            conn_override (sqlite3.Connection, optional): 외부에서 전달한 데이터베이스 연결 객체
+            
+        Returns:
+            dict: 파라미터 정보 딕셔너리 또는 None
+        """
+        with self.get_connection(conn_override) as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                """SELECT d.id, d.equipment_type_id, d.parameter_name, d.default_value, 
+                          d.min_spec, d.max_spec, e.type_name, d.description,
+                          d.module_name, d.part_name, d.item_type, d.is_performance
+                   FROM Default_DB_Values d
+                   JOIN Equipment_Types e ON d.equipment_type_id = e.id
+                   WHERE d.id = ?""",
+                (parameter_id,)
+            )
+            
+            result = cursor.fetchone()
+            if result:
+                return {
+                    'id': result[0],
+                    'equipment_type_id': result[1],
+                    'parameter_name': result[2],
+                    'default_value': result[3],
+                    'min_spec': result[4],
+                    'max_spec': result[5],
+                    'equipment_type': result[6],
+                    'description': result[7],
+                    'module_name': result[8],
+                    'part_name': result[9],
+                    'item_type': result[10],
+                    'is_performance': result[11]
+                }
+            return None
+
     def get_parameter_statistics(self, equipment_type_id, parameter_name):
         """
         특정 파라미터의 통계 정보를 반환합니다.

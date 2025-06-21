@@ -2010,17 +2010,7 @@ class DBManager:
             ttk.Button(basic_mgmt_frame, text="선택 항목 삭제", 
                       command=self.delete_selected_parameters).pack(side=tk.LEFT, padx=5)
             
-            # 🆕 Performance 관리 버튼들
-            ttk.Button(basic_mgmt_frame, text="🎯 Performance 설정", 
-                      command=self.toggle_performance_status).pack(side=tk.LEFT, padx=5)
-            ttk.Button(basic_mgmt_frame, text="📊 Performance 통계", 
-                      command=self.show_performance_statistics).pack(side=tk.LEFT, padx=5)
-            
-            # 🆕 추가 Performance 관리 버튼들
-            ttk.Button(basic_mgmt_frame, text="✅ Performance 설정", 
-                      command=lambda: self.quick_set_performance(True)).pack(side=tk.LEFT, padx=5)
-            ttk.Button(basic_mgmt_frame, text="❌ Performance 해제", 
-                      command=lambda: self.quick_set_performance(False)).pack(side=tk.LEFT, padx=5)
+
             
             # 두 번째 줄: 필터링 및 보기 옵션
             filter_frame = ttk.Frame(param_frame)
@@ -2036,24 +2026,9 @@ class DBManager:
             )
             performance_cb.pack(side=tk.LEFT, padx=5)
             
-            # 신뢰도 필터
-            ttk.Label(filter_frame, text="신뢰도 필터:").pack(side=tk.LEFT, padx=(20, 5))
-            self.confidence_filter_var = tk.StringVar(value="전체")
-            confidence_combo = ttk.Combobox(
-                filter_frame, 
-                textvariable=self.confidence_filter_var,
-                values=["전체", "90% 이상", "80% 이상", "70% 이상", "50% 이상"],
-                state="readonly",
-                width=12
-            )
-            confidence_combo.pack(side=tk.LEFT, padx=5)
-            confidence_combo.bind("<<ComboboxSelected>>", self.apply_confidence_filter)
+
             
-            # 🆕 필터 적용/초기화 버튼
-            ttk.Button(filter_frame, text="🔍 필터 적용", 
-                      command=self.apply_all_filters).pack(side=tk.LEFT, padx=10)
-            ttk.Button(filter_frame, text="🔄 필터 초기화", 
-                      command=self.reset_all_filters).pack(side=tk.LEFT, padx=5)
+
             
             # 세 번째 줄: 텍스트 파일 기능
             text_frame = ttk.Frame(param_frame)
@@ -2063,26 +2038,20 @@ class DBManager:
             ttk.Button(text_frame, text="텍스트 파일로 내보내기", 
                       command=self.export_to_text_file).pack(side=tk.LEFT, padx=5)
             
-            # 네 번째 줄: Excel 기능
-            excel_frame = ttk.Frame(param_frame)
-            excel_frame.pack(fill=tk.X, pady=2)
-            ttk.Button(excel_frame, text="Excel로 내보내기", 
-                      command=self.export_default_db_to_excel).pack(side=tk.LEFT, padx=5)
-            ttk.Button(excel_frame, text="Excel에서 가져오기", 
-                      command=self.import_default_db_from_excel).pack(side=tk.LEFT, padx=5)
+            # Excel 기능 제거됨
             
             # 파라미터 목록 트리뷰
             tree_frame = ttk.Frame(self.default_db_frame)
             tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
             
-            # 🆕 트리뷰 컬럼에 Performance 추가
+            # 🆕 트리뷰 컬럼에 Performance 추가 (통계 관련 컬럼 제거)
             columns = ("id", "parameter_name", "module", "part", "item_type", "default_value", "min_spec", "max_spec", 
-                      "occurrence_count", "total_files", "confidence_score", "is_performance", "source_files", "description")
+                      "is_performance", "description")
             
             self.default_db_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
             self.update_log("✅ Default DB 트리뷰 생성 완료")
             
-            # 🆕 컬럼 헤더 설정 (Performance 컬럼 추가)
+            # 🆕 컬럼 헤더 설정 (Performance 컬럼 추가, 통계 관련 컬럼 제거)
             headers = {
                 "id": "ID",
                 "parameter_name": "파라미터명",
@@ -2092,11 +2061,7 @@ class DBManager:
                 "default_value": "설정값",
                 "min_spec": "최소값",
                 "max_spec": "최대값",
-                "occurrence_count": "발생횟수",
-                "total_files": "전체파일",
-                "confidence_score": "신뢰도(%)",
                 "is_performance": "🎯 Performance",
-                "source_files": "소스파일",
                 "description": "설명"
             }
             
@@ -2109,11 +2074,7 @@ class DBManager:
                 "default_value": 100,
                 "min_spec": 80,
                 "max_spec": 80,
-                "occurrence_count": 80,
-                "total_files": 80,
-                "confidence_score": 80,
                 "is_performance": 90,
-                "source_files": 150,
                 "description": 150
             }
             
@@ -2398,22 +2359,11 @@ class DBManager:
                     if not is_performance:
                         continue  # Performance가 아닌 항목은 건너뛰기
                 
-                # 신뢰도 필터
-                if hasattr(self, 'confidence_filter_var'):
-                    filter_value = self.confidence_filter_var.get()
-                    if filter_value != "전체":
-                        required_confidence = float(filter_value.replace("% 이상", "")) / 100.0
-                        if confidence_score < required_confidence:
-                            continue  # 신뢰도가 낮은 항목은 건너뛰기
-                
-                # 신뢰도를 퍼센트로 변환
-                confidence_percent = f"{confidence_score * 100:.1f}"
-                
                 # Performance 상태 표시
                 performance_display = "✅ Yes" if is_performance else "❌ No"
                 
                 values = (record_id, parameter_name, module_name, part_name, item_type, default_value, min_spec, max_spec,
-                         occurrence_count, total_files, confidence_percent, performance_display, source_files, description)
+                         performance_display, description)
                 
                 self.default_db_tree.insert("", "end", values=values)
                 added_count += 1
@@ -2546,41 +2496,413 @@ class DBManager:
 
     def add_parameter_dialog(self):
         """새 파라미터 추가 다이얼로그"""
+        if not self.maint_mode:
+            messagebox.showwarning("권한 없음", "유지보수 모드에서만 파라미터를 추가할 수 있습니다.")
+            return
+            
         if not self.equipment_type_var.get():
             messagebox.showwarning("경고", "먼저 장비 유형을 선택해주세요.")
             return
         
-        # defaultdb.py의 add_parameter 기능 호출
-        if hasattr(self, 'add_parameter'):
-            self.add_parameter()
-        else:
-            messagebox.showinfo("개발 중", "파라미터 수동 추가 기능은 개발 중입니다.\n"
-                                          "현재는 DB 비교 탭에서 'Default DB로 전송' 기능을 사용해주세요.")
+        # 현재 선택된 장비 유형 ID 추출
+        selected_type = self.equipment_type_var.get()
+        if "ID: " not in selected_type:
+            messagebox.showwarning("경고", "유효한 장비 유형을 선택해주세요.")
+            return
+        
+        equipment_type_id = int(selected_type.split("ID: ")[1].split(")")[0])
+        
+        # 파라미터 추가 대화상자
+        param_dialog = tk.Toplevel(self.window)
+        param_dialog.title("파라미터 추가")
+        param_dialog.geometry("450x420")
+        param_dialog.transient(self.window)
+        param_dialog.grab_set()
+        
+        # 부모 창 중앙에 배치
+        param_dialog.geometry("450x420")
+        param_dialog.update_idletasks()
+        x = (param_dialog.winfo_screenwidth() // 2) - (450 // 2)
+        y = (param_dialog.winfo_screenheight() // 2) - (420 // 2)
+        param_dialog.geometry(f"450x420+{x}+{y}")
+
+        param_frame = ttk.Frame(param_dialog, padding=10)
+        param_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 파라미터 입력 필드
+        def create_label_entry_pair(parent, label_text, row, initial_value=""):
+            ttk.Label(parent, text=label_text).grid(row=row, column=0, padx=5, pady=5, sticky="w")
+            var = tk.StringVar(value=initial_value)
+            entry = ttk.Entry(parent, textvariable=var)
+            entry.grid(row=row, column=1, padx=5, pady=5, sticky="ew")
+            return var, entry
+
+        name_var, name_entry = create_label_entry_pair(param_frame, "파라미터명:", 0)
+        module_var, module_entry = create_label_entry_pair(param_frame, "Module:", 1, "DSP")
+        part_var, part_entry = create_label_entry_pair(param_frame, "Part:", 2)
+        
+        # ItemType 콤보박스
+        ttk.Label(param_frame, text="데이터 타입:").grid(row=3, column=0, padx=5, pady=5, sticky="w")
+        item_type_var = tk.StringVar()
+        item_type_combo = ttk.Combobox(
+            param_frame, 
+            textvariable=item_type_var, 
+            values=["double", "int", "string"], 
+            state="readonly"
+        )
+        item_type_combo.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
+        item_type_combo.set("double")  # 기본값
+        
+        default_var, default_entry = create_label_entry_pair(param_frame, "설정값:", 4)
+        min_var, min_entry = create_label_entry_pair(param_frame, "최소값:", 5)
+        max_var, max_entry = create_label_entry_pair(param_frame, "최대값:", 6)
+
+        # 설명 필드 (여러 줄)
+        ttk.Label(param_frame, text="설명:").grid(row=7, column=0, padx=5, pady=5, sticky="w")
+        desc_text = tk.Text(param_frame, height=4, width=30)
+        desc_text.grid(row=7, column=1, padx=5, pady=5, sticky="ew")
+
+        # 열 너비 조정
+        param_frame.columnconfigure(1, weight=1)
+
+        # 버튼 프레임
+        button_frame = ttk.Frame(param_dialog)
+        button_frame.pack(fill=tk.X, padx=10, pady=10)
+
+        # 저장 함수
+        def save_parameter():
+            # 입력값 검증
+            name = name_var.get().strip()
+            if not name:
+                messagebox.showerror("오류", "파라미터명은 필수 입력 항목입니다.")
+                return
+
+            module_name = module_var.get().strip()
+            part_name = part_var.get().strip()
+            item_type = item_type_var.get()
+            default_value = default_var.get().strip()
+
+            # 숫자 입력값 변환
+            try:
+                min_value = float(min_var.get()) if min_var.get().strip() else None
+                max_value = float(max_var.get()) if max_var.get().strip() else None
+            except ValueError:
+                messagebox.showerror("오류", "최소값과 최대값은 숫자여야 합니다.")
+                return
+
+            # 최소값/최대값 검증
+            if min_value is not None and max_value is not None and min_value > max_value:
+                messagebox.showerror("오류", "최소값이 최대값보다 클 수 없습니다.")
+                return
+
+            description = desc_text.get("1.0", tk.END).strip()
+
+            try:
+                # 중복 체크
+                existing_params = self.db_schema.get_default_values(equipment_type_id)
+                for param in existing_params:
+                    if param[1] == name:  # parameter_name
+                        messagebox.showerror("오류", "이미 존재하는 파라미터명입니다.")
+                        return
+
+                # 파라미터 추가
+                record_id = self.db_schema.add_default_value(
+                    equipment_type_id=equipment_type_id,
+                    parameter_name=name,
+                    default_value=default_value,
+                    min_spec=min_value,
+                    max_spec=max_value,
+                    occurrence_count=1,
+                    total_files=1,
+                    source_files="Manual Entry",
+                    description=description,
+                    module_name=module_name,
+                    part_name=part_name,
+                    item_type=item_type
+                )
+
+                # 변경 이력 기록
+                equipment_type_name = selected_type.split(" (ID:")[0]
+                self.db_schema.log_change_history(
+                    "add", "parameter", f"{equipment_type_name}_{name}", 
+                    "", f"default: {default_value}, min: {min_value}, max: {max_value}", "admin"
+                )
+
+                # 대화상자 닫기
+                param_dialog.destroy()
+
+                # 파라미터 목록 갱신
+                self.on_equipment_type_selected()
+
+                # 로그 업데이트
+                self.update_log(f"✅ 파라미터 추가 완료: {name} (장비유형: {equipment_type_name})")
+                messagebox.showinfo("완료", f"파라미터 '{name}'이 성공적으로 추가되었습니다.")
+
+            except Exception as e:
+                messagebox.showerror("오류", f"파라미터 추가 중 오류 발생: {str(e)}")
+                self.update_log(f"❌ 파라미터 추가 오류: {str(e)}")
+
+        # 버튼 추가
+        ttk.Button(button_frame, text="저장", command=save_parameter).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="취소", command=param_dialog.destroy).pack(side=tk.RIGHT, padx=5)
+
+        # 첫 번째 필드에 포커스
+        name_entry.focus_set()
 
     def delete_selected_parameters(self):
         """선택된 파라미터들을 삭제합니다."""
+        if not self.maint_mode:
+            messagebox.showwarning("권한 없음", "유지보수 모드에서만 파라미터를 삭제할 수 있습니다.")
+            return
+            
         selected_items = self.default_db_tree.selection()
         if not selected_items:
             messagebox.showwarning("경고", "삭제할 파라미터를 선택해주세요.")
             return
+
+        # 선택된 파라미터 정보 수집
+        param_names = []
+        param_ids = []
         
-        # defaultdb.py의 delete_parameter 기능 호출
-        if hasattr(self, 'delete_parameter'):
-            self.delete_parameter()
+        for item in selected_items:
+            values = self.default_db_tree.item(item, 'values')
+            if values:
+                param_ids.append(values[0])  # ID
+                param_names.append(values[1])  # 파라미터명
+
+        if not param_ids:
+            messagebox.showwarning("경고", "삭제할 파라미터 정보를 찾을 수 없습니다.")
+            return
+
+        # 삭제 확인
+        if len(param_names) == 1:
+            confirm_msg = f"파라미터 '{param_names[0]}'을(를) 삭제하시겠습니까?\n\n주의: 관련된 모든 데이터가 함께 삭제됩니다!"
         else:
-            messagebox.showinfo("개발 중", "파라미터 삭제 기능은 개발 중입니다.")
+            param_list = '\n'.join([f"• {name}" for name in param_names])
+            confirm_msg = f"다음 {len(param_names)}개 파라미터를 삭제하시겠습니까?\n\n{param_list}\n\n주의: 관련된 모든 데이터가 함께 삭제됩니다!"
+
+        confirm = messagebox.askyesno("삭제 확인", confirm_msg)
+        if not confirm:
+            return
+
+        try:
+            # 파라미터 삭제 실행
+            success_count = 0
+            failed_params = []
+            
+            for i, param_id in enumerate(param_ids):
+                try:
+                    # DB에서 파라미터 삭제
+                    success = self.db_schema.delete_default_value(param_id)
+                    if success:
+                        success_count += 1
+                        
+                        # 변경 이력 기록
+                        equipment_type_name = self.equipment_type_var.get().split(" (ID:")[0]
+                        self.db_schema.log_change_history(
+                            "delete", "parameter", f"{equipment_type_name}_{param_names[i]}", 
+                            "deleted", "", "admin"
+                        )
+                        
+                        self.update_log(f"✅ 파라미터 삭제 완료: {param_names[i]}")
+                    else:
+                        failed_params.append(param_names[i])
+                        self.update_log(f"❌ 파라미터 삭제 실패: {param_names[i]}")
+                        
+                except Exception as e:
+                    failed_params.append(param_names[i])
+                    self.update_log(f"❌ 파라미터 삭제 오류: {param_names[i]} - {str(e)}")
+
+            # 결과 메시지 표시
+            if success_count > 0:
+                if failed_params:
+                    messagebox.showwarning(
+                        "부분 완료", 
+                        f"{success_count}개 파라미터가 삭제되었습니다.\n"
+                        f"실패한 파라미터: {', '.join(failed_params)}"
+                    )
+                else:
+                    messagebox.showinfo("완료", f"{success_count}개 파라미터가 성공적으로 삭제되었습니다.")
+                
+                # 파라미터 목록 갱신
+                self.on_equipment_type_selected()
+            else:
+                messagebox.showerror("오류", "파라미터 삭제에 실패했습니다.")
+
+        except Exception as e:
+            messagebox.showerror("오류", f"파라미터 삭제 중 오류 발생: {str(e)}")
+            self.update_log(f"❌ 파라미터 삭제 중 오류: {str(e)}")
 
     def edit_parameter_dialog(self, event):
         """파라미터 편집 다이얼로그"""
-        selected_item = self.default_db_tree.selection()
-        if not selected_item:
+        if not self.maint_mode:
+            messagebox.showwarning("권한 없음", "유지보수 모드에서만 파라미터를 편집할 수 있습니다.")
             return
+            
+        selected_items = self.default_db_tree.selection()
+        if not selected_items:
+            messagebox.showwarning("경고", "편집할 파라미터를 선택해주세요.")
+            return
+
+        # 첫 번째 선택된 항목만 편집
+        selected_item = selected_items[0]
+        values = self.default_db_tree.item(selected_item, 'values')
+        if not values:
+            return
+
+        param_id = values[0]
         
-        # defaultdb.py의 edit_parameter 기능 호출
-        if hasattr(self, 'edit_parameter'):
-            self.edit_parameter()
-        else:
-            messagebox.showinfo("개발 중", "파라미터 편집 기능은 개발 중입니다.")
+        try:
+            # 파라미터 정보 조회
+            param_data = self.db_schema.get_parameter_by_id(param_id)
+            if not param_data:
+                messagebox.showerror("오류", "파라미터 정보를 찾을 수 없습니다.")
+                return
+
+            # 파라미터 수정 대화상자
+            param_dialog = tk.Toplevel(self.window)
+            param_dialog.title("파라미터 수정")
+            param_dialog.geometry("450x420")
+            param_dialog.transient(self.window)
+            param_dialog.grab_set()
+
+            # 부모 창 중앙에 배치
+            param_dialog.update_idletasks()
+            x = (param_dialog.winfo_screenwidth() // 2) - (450 // 2)
+            y = (param_dialog.winfo_screenheight() // 2) - (420 // 2)
+            param_dialog.geometry(f"450x420+{x}+{y}")
+
+            param_frame = ttk.Frame(param_dialog, padding=10)
+            param_frame.pack(fill=tk.BOTH, expand=True)
+
+            # 파라미터 입력 필드
+            def create_label_entry_pair(parent, label_text, row, initial_value=""):
+                ttk.Label(parent, text=label_text).grid(row=row, column=0, padx=5, pady=5, sticky="w")
+                var = tk.StringVar(value=initial_value)
+                entry = ttk.Entry(parent, textvariable=var)
+                entry.grid(row=row, column=1, padx=5, pady=5, sticky="ew")
+                return var, entry
+
+            # 기존 데이터로 필드 초기화
+            name_var, name_entry = create_label_entry_pair(param_frame, "파라미터명:", 0, param_data.get('parameter_name', ''))
+            module_var, module_entry = create_label_entry_pair(param_frame, "Module:", 1, param_data.get('module_name', ''))
+            part_var, part_entry = create_label_entry_pair(param_frame, "Part:", 2, param_data.get('part_name', ''))
+            
+            # ItemType 콤보박스
+            ttk.Label(param_frame, text="데이터 타입:").grid(row=3, column=0, padx=5, pady=5, sticky="w")
+            item_type_var = tk.StringVar()
+            item_type_combo = ttk.Combobox(
+                param_frame, 
+                textvariable=item_type_var, 
+                values=["double", "int", "string"], 
+                state="readonly"
+            )
+            item_type_combo.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
+            item_type_combo.set(param_data.get('item_type', 'double'))
+
+            default_var, default_entry = create_label_entry_pair(param_frame, "설정값:", 4, param_data.get('default_value', ''))
+            min_var, min_entry = create_label_entry_pair(param_frame, "최소값:", 5, str(param_data.get('min_spec', '')) if param_data.get('min_spec') is not None else '')
+            max_var, max_entry = create_label_entry_pair(param_frame, "최대값:", 6, str(param_data.get('max_spec', '')) if param_data.get('max_spec') is not None else '')
+
+            # 설명 필드 (여러 줄)
+            ttk.Label(param_frame, text="설명:").grid(row=7, column=0, padx=5, pady=5, sticky="w")
+            desc_text = tk.Text(param_frame, height=4, width=30)
+            desc_text.grid(row=7, column=1, padx=5, pady=5, sticky="ew")
+            desc_text.insert("1.0", param_data.get('description', ''))
+
+            # 열 너비 조정
+            param_frame.columnconfigure(1, weight=1)
+
+            # 버튼 프레임
+            button_frame = ttk.Frame(param_dialog)
+            button_frame.pack(fill=tk.X, padx=10, pady=10)
+
+            # 저장 함수
+            def save_parameter():
+                # 입력값 검증
+                new_name = name_var.get().strip()
+                if not new_name:
+                    messagebox.showerror("오류", "파라미터명은 필수 입력 항목입니다.")
+                    return
+
+                new_module_name = module_var.get().strip()
+                new_part_name = part_var.get().strip()
+                new_item_type = item_type_var.get()
+                new_default_value = default_var.get().strip()
+
+                # 숫자 입력값 변환
+                try:
+                    new_min_value = float(min_var.get()) if min_var.get().strip() else None
+                    new_max_value = float(max_var.get()) if max_var.get().strip() else None
+                except ValueError:
+                    messagebox.showerror("오류", "최소값과 최대값은 숫자여야 합니다.")
+                    return
+
+                # 최소값/최대값 검증
+                if new_min_value is not None and new_max_value is not None and new_min_value > new_max_value:
+                    messagebox.showerror("오류", "최소값이 최대값보다 클 수 없습니다.")
+                    return
+
+                new_description = desc_text.get("1.0", tk.END).strip()
+
+                try:
+                    # 이름이 변경된 경우 중복 체크
+                    if new_name != param_data.get('parameter_name'):
+                        equipment_type_id = int(self.equipment_type_var.get().split("ID: ")[1].split(")")[0])
+                        existing_params = self.db_schema.get_default_values(equipment_type_id)
+                        for param in existing_params:
+                            if param[1] == new_name and param[0] != param_id:  # parameter_name, id
+                                messagebox.showerror("오류", "이미 존재하는 파라미터명입니다.")
+                                return
+
+                    # 파라미터 수정
+                    success = self.db_schema.update_default_value(
+                        record_id=param_id,
+                        parameter_name=new_name,
+                        default_value=new_default_value,
+                        min_spec=new_min_value,
+                        max_spec=new_max_value,
+                        description=new_description,
+                        module_name=new_module_name,
+                        part_name=new_part_name,
+                        item_type=new_item_type
+                    )
+
+                    if success:
+                        # 변경 이력 기록
+                        equipment_type_name = self.equipment_type_var.get().split(" (ID:")[0]
+                        old_name = param_data.get('parameter_name', '')
+                        self.db_schema.log_change_history(
+                            "update", "parameter", f"{equipment_type_name}_{old_name}", 
+                            f"old: {old_name}", f"new: {new_name}, default: {new_default_value}", "admin"
+                        )
+
+                        # 대화상자 닫기
+                        param_dialog.destroy()
+
+                        # 파라미터 목록 갱신
+                        self.on_equipment_type_selected()
+
+                        # 로그 업데이트
+                        self.update_log(f"✅ 파라미터 수정 완료: {old_name} → {new_name}")
+                        messagebox.showinfo("완료", f"파라미터 '{new_name}'이 성공적으로 수정되었습니다.")
+                    else:
+                        messagebox.showerror("오류", "파라미터 수정에 실패했습니다.")
+
+                except Exception as e:
+                    messagebox.showerror("오류", f"파라미터 수정 중 오류 발생: {str(e)}")
+                    self.update_log(f"❌ 파라미터 수정 오류: {str(e)}")
+
+            # 버튼 추가
+            ttk.Button(button_frame, text="저장", command=save_parameter).pack(side=tk.LEFT, padx=5)
+            ttk.Button(button_frame, text="취소", command=param_dialog.destroy).pack(side=tk.RIGHT, padx=5)
+
+            # 첫 번째 필드에 포커스
+            name_entry.focus_set()
+
+        except Exception as e:
+            messagebox.showerror("오류", f"파라미터 정보 로드 중 오류 발생: {str(e)}")
+            self.update_log(f"❌ 파라미터 편집 오류: {str(e)}")
 
     def export_default_db_to_excel(self):
         """Default DB를 Excel로 내보내기"""
@@ -3502,86 +3824,7 @@ class DBManager:
             self.update_log(f"❌ {error_msg}")
             messagebox.showerror("오류", error_msg)
 
-    def show_performance_statistics(self):
-        """Performance 통계 다이얼로그 표시"""
-        try:
-            if not self.equipment_type_var.get():
-                messagebox.showwarning("선택 필요", "먼저 장비 유형을 선택해주세요.")
-                return
-            
-            # 현재 선택된 장비 유형 ID 추출
-            selected_text = self.equipment_type_var.get()
-            if "ID: " not in selected_text:
-                return
-            
-            equipment_type_id = int(selected_text.split("ID: ")[1].split(")")[0])
-            
-            # Performance 통계 조회
-            stats = self.db_schema.get_equipment_performance_count(equipment_type_id)
-            
-            # 통계 다이얼로그 생성
-            stats_window = tk.Toplevel(self.window)
-            stats_window.title("📊 Performance 통계")
-            stats_window.geometry("400x300")
-            stats_window.transient(self.window)
-            stats_window.grab_set()
-            
-            # 통계 정보 표시
-            stats_frame = ttk.Frame(stats_window, padding=20)
-            stats_frame.pack(fill=tk.BOTH, expand=True)
-            
-            # 제목
-            title_label = ttk.Label(
-                stats_frame, 
-                text=f"🎯 Performance 통계\n{selected_text.split(' (ID:')[0]}", 
-                font=('Arial', 12, 'bold'),
-                justify='center'
-            )
-            title_label.pack(pady=(0, 20))
-            
-            # 통계 카드들
-            total_frame = ttk.LabelFrame(stats_frame, text="📊 전체 파라미터", padding=10)
-            total_frame.pack(fill=tk.X, pady=5)
-            ttk.Label(total_frame, text=f"{stats['total']}개", font=('Arial', 16, 'bold')).pack()
-            
-            perf_frame = ttk.LabelFrame(stats_frame, text="🎯 Performance 파라미터", padding=10)
-            perf_frame.pack(fill=tk.X, pady=5)
-            ttk.Label(perf_frame, text=f"{stats['performance']}개", font=('Arial', 16, 'bold'), foreground='blue').pack()
-            
-            # 비율 계산
-            if stats['total'] > 0:
-                percentage = (stats['performance'] / stats['total']) * 100
-                ratio_text = f"{percentage:.1f}%"
-            else:
-                ratio_text = "0.0%"
-            
-            ratio_frame = ttk.LabelFrame(stats_frame, text="📈 Performance 비율", padding=10)
-            ratio_frame.pack(fill=tk.X, pady=5)
-            ttk.Label(ratio_frame, text=ratio_text, font=('Arial', 16, 'bold'), foreground='green').pack()
-            
-            # 권장사항
-            if stats['performance'] == 0:
-                recommendation = "⚠️ Performance 파라미터가 설정되지 않았습니다.\nQC 검수 품질 향상을 위해 중요한 파라미터를 Performance로 설정해주세요."
-                color = 'red'
-            elif percentage < 20:
-                recommendation = "💡 Performance 파라미터 비율이 낮습니다.\n추가 설정을 권장합니다."
-                color = 'orange'
-            else:
-                recommendation = "✅ Performance 파라미터가 적절히 설정되었습니다."
-                color = 'green'
-            
-            rec_frame = ttk.LabelFrame(stats_frame, text="💡 권장사항", padding=10)
-            rec_frame.pack(fill=tk.X, pady=5)
-            rec_label = ttk.Label(rec_frame, text=recommendation, foreground=color, justify='center')
-            rec_label.pack()
-            
-            # 닫기 버튼
-            ttk.Button(stats_frame, text="닫기", command=stats_window.destroy).pack(pady=20)
-            
-        except Exception as e:
-            error_msg = f"Performance 통계 표시 오류: {str(e)}"
-            self.update_log(f"❌ {error_msg}")
-            messagebox.showerror("오류", error_msg)
+
 
     def create_default_db_context_menu(self):
         """Default DB 트리뷰용 우클릭 메뉴 생성"""
@@ -3678,13 +3921,7 @@ class DBManager:
         except Exception as e:
             self.update_log(f"Performance 필터 적용 오류: {e}")
 
-    def apply_confidence_filter(self, event=None):
-        """신뢰도 필터 적용"""
-        try:
-            # 현재 선택된 장비 유형으로 다시 로드
-            self.on_equipment_type_selected()
-        except Exception as e:
-            self.update_log(f"신뢰도 필터 적용 오류: {e}")
+
 
     def show_parameter_details(self):
         """선택된 파라미터의 상세 정보 표시"""
@@ -3725,19 +3962,11 @@ class DBManager:
 • 최소값: {values[6]}
 • 최대값: {values[7]}
 
-📊 통계 정보:
-• 발생 횟수: {values[8]}
-• 전체 파일 수: {values[9]}
-• 신뢰도: {values[10]}%
-
 🎯 Performance 설정:
-• Performance 항목: {"✅ Yes" if values[11] == "True" else "❌ No"}
-
-📁 소스 정보:
-• 소스 파일: {values[12]}
+• Performance 항목: {"✅ Yes" if values[8] == "✅ Yes" else "❌ No"}
 
 📝 설명:
-{values[13]}
+{values[9]}
 """
             
             info_text.insert(tk.END, param_info)
@@ -3751,63 +3980,6 @@ class DBManager:
             self.update_log(f"❌ {error_msg}")
             messagebox.showerror("오류", error_msg)
 
-    def quick_set_performance(self, is_performance):
-        """Performance 상태를 빠르게 설정"""
-        try:
-            if not self.maint_mode:
-                messagebox.showwarning("권한 없음", "유지보수 모드에서만 Performance 상태를 변경할 수 있습니다.")
-                return
-            
-            selected_items = self.default_db_tree.selection()
-            if not selected_items:
-                messagebox.showwarning("선택 필요", "Performance 상태를 변경할 파라미터를 선택해주세요.")
-                return
-            
-            success_count = 0
-            for item in selected_items:
-                values = self.default_db_tree.item(item, 'values')
-                if values:
-                    record_id = values[0]  # ID 컬럼
-                    parameter_name = values[1]  # 파라미터명
-                    
-                    # DB에서 Performance 상태 업데이트
-                    if self.db_schema.set_performance_status(record_id, is_performance):
-                        success_count += 1
-                        self.update_log(f"✅ {parameter_name}: Performance {'설정' if is_performance else '해제'}")
-                    else:
-                        self.update_log(f"❌ {parameter_name}: Performance 상태 변경 실패")
-            
-            if success_count > 0:
-                status_text = "Performance로 설정" if is_performance else "Performance 해제"
-                messagebox.showinfo("완료", f"{success_count}개 파라미터의 {status_text}가 완료되었습니다.")
-                
-                # 화면 새로고침
-                self.on_equipment_type_selected()
-            else:
-                messagebox.showerror("오류", "Performance 상태 변경에 실패했습니다.")
-                
-        except Exception as e:
-            error_msg = f"Performance 상태 설정 오류: {str(e)}"
-            self.update_log(f"❌ {error_msg}")
-            messagebox.showerror("오류", error_msg)
 
-    def apply_all_filters(self):
-        """Performance 필터와 신뢰도 필터 적용"""
-        try:
-            # 현재 선택된 장비 유형으로 다시 로드
-            self.on_equipment_type_selected()
-        except Exception as e:
-            self.update_log(f"Performance 필터 적용 오류: {e}")
 
-    def reset_all_filters(self):
-        """Performance 필터와 신뢰도 필터 초기화"""
-        try:
-            # 필터 변수들 초기화
-            self.show_performance_only_var.set(False)
-            self.confidence_filter_var.set("전체")
-            
-            # 현재 선택된 장비 유형으로 다시 로드
-            self.on_equipment_type_selected()
-            self.update_log("✅ 필터가 초기화되었습니다.")
-        except Exception as e:
-            self.update_log(f"❌ 필터 초기화 오류: {e}")
+
