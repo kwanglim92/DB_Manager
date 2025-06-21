@@ -485,7 +485,7 @@ def add_default_db_functions_to_class(cls):
         old_name = selected_item.split(" (ID:")[0]
 
         # 새 이름 입력
-        new_name = simpledialog.askstring("장비 유형 수정", "새 장비 유형명을 입력하세요:", initialvalue=old_name)
+        new_name = simpledialog.askstring("장비 유형 수정", "새 장비 유형명을 입력하세요:")
 
         if not new_name or new_name == old_name:
             return
@@ -937,159 +937,162 @@ def add_default_db_functions_to_class(cls):
         try:
             # 로딩 대화상자 표시
             loading_dialog = LoadingDialog(self.window)
-            self.window.update_idletasks()
+            loading_dialog.update_progress(10, "Excel 파일을 Import하는 중...")
+            
+            try:
+                # Excel 파일 로드
+                df = pd.read_excel(file_path)
 
-            # Excel 파일 로드
-            loading_dialog.update_progress(10, "Excel 파일 로드 중...")
-            df = pd.read_excel(file_path)
+                # 필수 열 확인
+                required_columns = ["파라미터명", "최소값", "최대값"]
+                missing_columns = [col for col in required_columns if col not in df.columns]
 
-            # 필수 열 확인
-            required_columns = ["파라미터명", "최소값", "최대값"]
-            missing_columns = [col for col in required_columns if col not in df.columns]
-
-            if missing_columns:
-                loading_dialog.close()
-                messagebox.showerror("오류", f"필수 열이 누락되었습니다: {', '.join(missing_columns)}")
-                return
-
-            # 데이터 변환 및 검증
-            loading_dialog.update_progress(30, "데이터 검증 중...")
-
-            # 열 이름 매핑
-            column_mapping = {
-                "파라미터명": "name",
-                "최소값": "min_value",
-                "최대값": "max_value",
-                "설정값": "default_value",
-                "설명": "description"
-            }
-
-            # 열 이름 변경
-            df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
-
-            # 누락된 열 추가
-            for col in ["default_value", "description"]:
-                if col not in df.columns:
-                    df[col] = None
-
-            # 데이터 정리
-            df['name'] = df['name'].astype(str).str.strip()
-
-            # 숫자 데이터 변환 (NaN 처리)
-            for col in ["min_value", "max_value"]:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
-
-            # 빈 파라미터명 행 제거
-            df = df[df['name'].notna() & (df['name'] != "")].reset_index(drop=True)
-
-            if len(df) == 0:
-                loading_dialog.close()
-                messagebox.showinfo("알림", "임포트할 유효한 파라미터가 없습니다.")
-                return
-
-            # DB 연결
-            conn = self.get_db_connection()
-            cursor = conn.cursor()
-
-            # 기존 파라미터 조회
-            loading_dialog.update_progress(50, "기존 파라미터 확인 중...")
-            cursor.execute(
-                "SELECT parameter_name FROM Default_DB_Values WHERE equipment_type_id = ?", 
-                (self.selected_equipment_type_id,)
-            )
-            existing_params = [row[0] for row in cursor.fetchall()]
-
-            # 중복 파라미터 확인
-            duplicates = df[df['name'].isin(existing_params)]['name'].unique().tolist()
-
-            # 중복 처리 여부 확인
-            if duplicates:
-                loading_dialog.close()
-                confirm = messagebox.askyesno(
-                    "중복 확인", 
-                    f"{len(duplicates)}개의 파라미터가 이미 존재합니다. 덮어쓰시겠습니까?\n\n{', '.join(duplicates[:5])}{' 외 더 있음' if len(duplicates) > 5 else ''}"
-                )
-
-                if not confirm:
+                if missing_columns:
+                    loading_dialog.close()
+                    messagebox.showerror("오류", f"필수 열이 누락되었습니다: {', '.join(missing_columns)}")
                     return
 
-                loading_dialog = LoadingDialog(self.window)
-                self.window.update_idletasks()
-                loading_dialog.update_progress(60, "데이터 준비 중...")
+                # 데이터 변환 및 검증
+                loading_dialog.update_progress(30, "데이터 검증 중...")
 
-            # 트랜잭션 시작
-            conn.execute("BEGIN TRANSACTION")
+                # 열 이름 매핑
+                column_mapping = {
+                    "파라미터명": "name",
+                    "최소값": "min_value",
+                    "최대값": "max_value",
+                    "설정값": "default_value",
+                    "설명": "description"
+                }
 
-            # 파라미터 추가/업데이트
-            loading_dialog.update_progress(70, "파라미터 임포트 중...")
+                # 열 이름 변경
+                df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
 
-            total_count = len(df)
-            added_count = 0
-            updated_count = 0
+                # 누락된 열 추가
+                for col in ["default_value", "description"]:
+                    if col not in df.columns:
+                        df[col] = None
 
-            for i, row in df.iterrows():
-                # 진행률 업데이트
-                progress = 70 + int(25 * (i / total_count))
-                loading_dialog.update_progress(progress, f"파라미터 임포트 중... ({i+1}/{total_count})")
+                # 데이터 정리
+                df['name'] = df['name'].astype(str).str.strip()
 
-                name = row['name']
-                min_value = row['min_value'] if not pd.isna(row['min_value']) else None
-                max_value = row['max_value'] if not pd.isna(row['max_value']) else None
-                default_value = row['default_value'] if 'default_value' in row and not pd.isna(row['default_value']) else None
-                description = row['description'] if 'description' in row and not pd.isna(row['description']) else None
+                # 숫자 데이터 변환 (NaN 처리)
+                for col in ["min_value", "max_value"]:
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
 
-                # 기존 파라미터인지 확인
-                if name in existing_params:
-                    # 업데이트
-                    cursor.execute(
-                        """UPDATE Default_DB_Values 
-                           SET min_spec = ?, max_spec = ?, default_value = ?, 
-                               description = ?, updated_at = CURRENT_TIMESTAMP 
-                           WHERE parameter_name = ? AND equipment_type_id = ?""", 
-                        (min_value, max_value, default_value, description, name, self.selected_equipment_type_id)
+                # 빈 파라미터명 행 제거
+                df = df[df['name'].notna() & (df['name'] != "")].reset_index(drop=True)
+
+                if len(df) == 0:
+                    loading_dialog.close()
+                    messagebox.showinfo("알림", "임포트할 유효한 파라미터가 없습니다.")
+                    return
+
+                # DB 연결
+                conn = self.get_db_connection()
+                cursor = conn.cursor()
+
+                # 기존 파라미터 조회
+                loading_dialog.update_progress(50, "기존 파라미터 확인 중...")
+                cursor.execute(
+                    "SELECT parameter_name FROM Default_DB_Values WHERE equipment_type_id = ?", 
+                    (self.selected_equipment_type_id,)
+                )
+                existing_params = [row[0] for row in cursor.fetchall()]
+
+                # 중복 파라미터 확인
+                duplicates = df[df['name'].isin(existing_params)]['name'].unique().tolist()
+
+                # 중복 처리 여부 확인
+                if duplicates:
+                    loading_dialog.close()
+                    confirm = messagebox.askyesno(
+                        "중복 확인", 
+                        f"{len(duplicates)}개의 파라미터가 이미 존재합니다. 덮어쓰시겠습니까?\n\n{', '.join(duplicates[:5])}{' 외 더 있음' if len(duplicates) > 5 else ''}"
                     )
-                    updated_count += 1
-                else:
-                    # 추가
-                    cursor.execute(
-                        """INSERT INTO Default_DB_Values 
-                           (equipment_type_id, parameter_name, min_spec, max_spec, default_value, description) 
-                           VALUES (?, ?, ?, ?, ?, ?)""", 
-                        (self.selected_equipment_type_id, name, min_value, max_value, default_value, description)
-                    )
-                    added_count += 1
 
-            # 트랜잭션 커밋
-            conn.commit()
+                    if not confirm:
+                        return
 
-            # 파라미터 목록 갱신
-            loading_dialog.update_progress(95, "화면 갱신 중...")
-            self.on_equipment_type_selected(None)
+                    loading_dialog = LoadingDialog(self.window)
+                    self.window.update_idletasks()
+                    loading_dialog.update_progress(60, "데이터 준비 중...")
 
-            # 완료
-            loading_dialog.update_progress(100, "완료")
-            conn.close()
-            loading_dialog.close()
+                # 트랜잭션 시작
+                conn.execute("BEGIN TRANSACTION")
 
-            # 결과 메시지
-            equipment_type = self.equipment_type_var.get()
-            self.update_log(f"[Default DB] 장비 유형 '{equipment_type}'에 파라미터 {added_count}개 추가, {updated_count}개 업데이트 완료.")
+                # 파라미터 추가/업데이트
+                loading_dialog.update_progress(70, "파라미터 임포트 중...")
 
-            messagebox.showinfo(
-                "임포트 완료", 
-                f"파라미터 임포트가 완료되었습니다.\n\n- 추가: {added_count}개\n- 업데이트: {updated_count}개\n- 총 처리: {total_count}개"
-            )
+                total_count = len(df)
+                added_count = 0
+                updated_count = 0
 
-        except Exception as e:
-            # 오류 처리
-            if 'conn' in locals() and conn:
-                conn.rollback()  # 오류 발생 시 롤백
+                for idx, (i, row) in enumerate(df.iterrows()):
+                    # 진행률 업데이트
+                    progress = 70 + int(25 * (idx / total_count))
+                    loading_dialog.update_progress(progress, f"파라미터 임포트 중... ({idx+1}/{total_count})")
+
+                    name = row['name']
+                    min_value = row['min_value'] if not pd.isna(row['min_value']) else None
+                    max_value = row['max_value'] if not pd.isna(row['max_value']) else None
+                    default_value = row['default_value'] if 'default_value' in row and not pd.isna(row['default_value']) else None
+                    description = row['description'] if 'description' in row and not pd.isna(row['description']) else None
+
+                    # 기존 파라미터인지 확인
+                    if name in existing_params:
+                        # 업데이트
+                        cursor.execute(
+                            """UPDATE Default_DB_Values 
+                               SET min_spec = ?, max_spec = ?, default_value = ?, 
+                                   description = ?, updated_at = CURRENT_TIMESTAMP 
+                               WHERE parameter_name = ? AND equipment_type_id = ?""", 
+                            (min_value, max_value, default_value, description, name, self.selected_equipment_type_id)
+                        )
+                        updated_count += 1
+                    else:
+                        # 추가
+                        cursor.execute(
+                            """INSERT INTO Default_DB_Values 
+                               (equipment_type_id, parameter_name, min_spec, max_spec, default_value, description) 
+                               VALUES (?, ?, ?, ?, ?, ?)""", 
+                            (self.selected_equipment_type_id, name, min_value, max_value, default_value, description)
+                        )
+                        added_count += 1
+
+                # 트랜잭션 커밋
+                conn.commit()
+
+                # 파라미터 목록 갱신
+                loading_dialog.update_progress(95, "화면 갱신 중...")
+                self.on_equipment_type_selected(None)
+
+                # 완료
+                loading_dialog.update_progress(100, "완료")
                 conn.close()
-
-            if 'loading_dialog' in locals() and loading_dialog:
                 loading_dialog.close()
 
-            messagebox.showerror("오류", f"파라미터 임포트 중 오류 발생: {str(e)}")
+                # 결과 메시지
+                equipment_type = self.equipment_type_var.get()
+                self.update_log(f"[Default DB] 장비 유형 '{equipment_type}'에 파라미터 {added_count}개 추가, {updated_count}개 업데이트 완료.")
+
+                messagebox.showinfo(
+                    "임포트 완료", 
+                    f"파라미터 임포트가 완료되었습니다.\n\n- 추가: {added_count}개\n- 업데이트: {updated_count}개\n- 총 처리: {total_count}개"
+                )
+
+            except Exception as e:
+                # 오류 처리
+                if 'conn' in locals() and conn:
+                    conn.rollback()  # 오류 발생 시 롤백
+                    conn.close()
+
+                if 'loading_dialog' in locals() and loading_dialog:
+                    loading_dialog.close()
+
+                messagebox.showerror("오류", f"파라미터 임포트 중 오류 발생: {str(e)}")
+
+        except Exception as e:
+            messagebox.showerror("오류", f"파일 로드 중 오류 발생: {str(e)}")
 
     def export_to_excel(self):
         """파라미터 목록을 Excel 파일로 내보내기"""
@@ -1119,7 +1122,7 @@ def add_default_db_functions_to_class(cls):
 
         try:
             # 로딩 대화상자 표시
-            loading_dialog = LoadingDialog(self.window, "데이터 준비 중...")
+            loading_dialog = LoadingDialog(self.window)
             self.window.update_idletasks()
             loading_dialog.update_progress(10, "데이터 변환 중...")
 
@@ -1214,8 +1217,7 @@ def add_default_db_functions_to_class(cls):
             # 장비 유형명 입력받기 (로딩 다이얼로그 전에)
             equipment_type_name = simpledialog.askstring(
                 "장비 유형", 
-                f"장비 유형명을 입력하세요:\n(파일: {os.path.basename(file_path)})",
-                initialvalue=os.path.splitext(os.path.basename(file_path))[0]
+                f"장비 유형명을 입력하세요:\n(파일: {os.path.basename(file_path)})"
             )
             
             if not equipment_type_name:
@@ -1223,28 +1225,27 @@ def add_default_db_functions_to_class(cls):
                 return
             
             # 로딩 다이얼로그 표시
-            loading_dialog = LoadingDialog(self.window, "텍스트 파일을 Import하는 중...")
+            loading_dialog = LoadingDialog(self.window)
+            loading_dialog.update_progress(10, "텍스트 파일을 Import하는 중...")
             
-            def import_task():
-                try:
-                    # Import 실행
-                    success, message = self.text_file_handler.import_from_text_file(file_path, equipment_type_name)
-                    return success, message
-                    
-                except Exception as e:
-                    return False, f"Import 중 오류 발생: {str(e)}"
-            
-            # 백그라운드에서 Import 실행
-            success, message = loading_dialog.run_task(import_task)
-            
-            if success:
-                messagebox.showinfo("성공", message)
-                # 장비 유형 목록과 파라미터 목록 새로고침
-                self.load_equipment_types()
-                self.update_log("[Default DB] 텍스트 파일 Import가 완료되었습니다.")
-            else:
-                messagebox.showerror("오류", message)
+            try:
+                # Import 실행
+                success, message = self.text_file_handler.import_from_text_file(file_path, equipment_type_name)
+                loading_dialog.update_progress(100, "완료")
+                loading_dialog.close()
                 
+                if success:
+                    messagebox.showinfo("성공", message)
+                    # 장비 유형 목록과 파라미터 목록 새로고침
+                    self.load_equipment_types()
+                    self.update_log("[Default DB] 텍스트 파일 Import가 완료되었습니다.")
+                else:
+                    messagebox.showerror("오류", message)
+                    
+            except Exception as e:
+                loading_dialog.close()
+                messagebox.showerror("오류", f"Import 중 오류 발생: {str(e)}")
+
         except Exception as e:
             messagebox.showerror("오류", f"텍스트 파일 Import 중 오류 발생: {str(e)}")
 
@@ -1273,7 +1274,6 @@ def add_default_db_functions_to_class(cls):
             file_path = filedialog.asksaveasfilename(
                 title="텍스트 파일로 저장",
                 defaultextension=".txt",
-                initialvalue=f"{selected_type}_Parameters.txt",
                 filetypes=[
                     ("텍스트 파일", "*.txt"),
                     ("모든 파일", "*.*")
@@ -1284,23 +1284,24 @@ def add_default_db_functions_to_class(cls):
                 return
             
             # 로딩 다이얼로그 표시
-            loading_dialog = LoadingDialog(self.window, "텍스트 파일로 Export하는 중...")
+            loading_dialog = LoadingDialog(self.window)
+            loading_dialog.update_progress(10, "텍스트 파일로 Export하는 중...")
             
-            def export_task():
-                try:
-                    return self.text_file_handler.export_to_text_file(self.selected_equipment_type_id, file_path)
-                except Exception as e:
-                    return False, f"Export 중 오류 발생: {str(e)}"
-            
-            # 백그라운드에서 Export 실행
-            success, message = loading_dialog.run_task(export_task)
-            
-            if success:
-                messagebox.showinfo("성공", message)
-                self.update_log("[Default DB] 텍스트 파일 Export가 완료되었습니다.")
-            else:
-                messagebox.showerror("오류", message)
+            try:
+                success, message = self.text_file_handler.export_to_text_file(self.selected_equipment_type_id, file_path)
+                loading_dialog.update_progress(100, "완료")
+                loading_dialog.close()
                 
+                if success:
+                    messagebox.showinfo("성공", message)
+                    self.update_log("[Default DB] 텍스트 파일 Export가 완료되었습니다.")
+                else:
+                    messagebox.showerror("오류", message)
+                    
+            except Exception as e:
+                loading_dialog.close()
+                messagebox.showerror("오류", f"Export 중 오류 발생: {str(e)}")
+
         except Exception as e:
             messagebox.showerror("오류", f"텍스트 파일 Export 중 오류 발생: {str(e)}")
 

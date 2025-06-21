@@ -106,6 +106,17 @@ class DBSchema:
                         print(f"컬럼 '{column_name}' 추가 완료")
                     except Exception as e:
                         print(f"컬럼 '{column_name}' 추가 실패: {e}")
+            
+            # Change_History 테이블에 username 컬럼이 있는지 확인
+            cursor.execute("PRAGMA table_info(Change_History)")
+            history_columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'username' not in history_columns:
+                try:
+                    cursor.execute('ALTER TABLE Change_History ADD COLUMN username TEXT DEFAULT ""')
+                    print("Change_History 테이블에 'username' 컬럼 추가 완료")
+                except Exception as e:
+                    print(f"Change_History 테이블에 'username' 컬럼 추가 실패: {e}")
                         
         except Exception as e:
             print(f"테이블 업데이트 중 오류: {e}")

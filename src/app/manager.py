@@ -93,7 +93,7 @@ class DBManager:
         
         try:
             icon_path = self.config.icon_path
-            if icon_path.exists():
+            if icon_path and icon_path.exists():
                 self.window.iconbitmap(str(icon_path))
         except Exception as e:
             print(f"아이콘 로드 실패: {str(e)}")
@@ -140,7 +140,7 @@ class DBManager:
         self.use_new_services = {}
         
         if not USE_NEW_SERVICES or not SERVICES_AVAILABLE:
-            self.update_log("서비스 레이어를 사용할 수 없습니다 (fallback mode)")
+            # 새로운 서비스 시스템이 아직 구현되지 않았으므로 기존 방식 사용 (정상 동작)
             return
         
         try:
@@ -654,12 +654,30 @@ class DBManager:
                     ext = os.path.splitext(file_name)[1].lower()
                     if ext == '.txt':
                         df = pd.read_csv(file, delimiter="\t", dtype=str)
+                        # 텍스트 파일의 필수 컬럼 확인 및 추가
+                        required_columns = ['Module', 'Part', 'ItemName', 'ItemType', 'ItemValue', 'ItemDescription']
+                        if all(col in df.columns for col in required_columns):
+                            # 표준 텍스트 파일 형식: ItemType 정보 보존
+                            df = df[required_columns].copy()
+                        else:
+                            # 호환성을 위한 fallback: 기본 컬럼명 추가
+                            if 'ItemType' not in df.columns:
+                                df['ItemType'] = 'double'  # 기본값
+                            if 'ItemDescription' not in df.columns:
+                                df['ItemDescription'] = ''
                     elif ext == '.csv':
                         df = pd.read_csv(file, dtype=str)
+                        # CSV 파일에서도 ItemType 보존 시도
+                        if 'ItemType' not in df.columns:
+                            df['ItemType'] = 'double'  # 기본값
                     elif ext == '.db':
                         conn = sqlite3.connect(file)
                         df = pd.read_sql("SELECT * FROM main_table", conn)
                         conn.close()
+                        # DB 파일에서도 ItemType 보존 시도
+                        if 'ItemType' not in df.columns:
+                            df['ItemType'] = 'double'  # 기본값
+                    
                     df["Model"] = base_name
                     df_list.append(df)
                     self.file_names.append(base_name)
@@ -1071,8 +1089,12 @@ class DBManager:
         dlg.grab_set()
         
         # 부모 창 중앙에 배치
-        from app.utils import center_dialog_on_parent
-        center_dialog_on_parent(dlg, self.window)
+        try:
+            from app.utils import center_dialog_on_parent
+            center_dialog_on_parent(dlg, self.window)
+        except ImportError:
+            # fallback: 화면 중앙에 배치
+            dlg.geometry("+%d+%d" % (self.window.winfo_rootx() + 50, self.window.winfo_rooty() + 50))
         
         # 장비 유형 선택 프레임
         type_frame = ttk.LabelFrame(dlg, text="🔧 장비 유형 선택", padding=10)
@@ -1272,11 +1294,35 @@ class DBManager:
                     self.refresh_equipment_types()
                     # 방금 추가한 장비 유형이 선택되도록 설정
                     type_names = self.equipment_type_combo['values']
-                    for type_name in type_names:
-                        if type_name.startswith(type_name.split(" (ID:")[0]):
-                            self.equipment_type_combo.set(type_name)
-                            self.on_equipment_type_selected()
+                    target_type_name = None
+                    
+                    # 현재 사용된 장비 유형을 기준으로 찾기
+                    for type_name_option in type_names:
+                        if f"ID: {type_id}" in type_name_option:
+                            target_type_name = type_name_option
                             break
+                    
+                    # 찾은 유형으로 설정하고 데이터 업데이트
+                    if target_type_name:
+                        self.equipment_type_combo.set(target_type_name)
+                        self.on_equipment_type_selected()
+                        self.update_log(f"✅ Default DB 관리 탭 업데이트 완료: {target_type_name}")
+                    else:
+                        # fallback: 현재 타입명으로 찾기
+                        for type_name_option in type_names:
+                            if type_name in type_name_option:
+                                self.equipment_type_combo.set(type_name_option)
+                                self.on_equipment_type_selected()
+                                self.update_log(f"✅ Default DB 관리 탭 업데이트 완료 (타입명 매칭): {type_name_option}")
+                                break
+                        else:
+                            # 최종 fallback: 첫 번째 항목 선택
+                            if type_names:
+                                self.equipment_type_combo.set(type_names[0])
+                                self.on_equipment_type_selected()
+                                self.update_log("✅ Default DB 관리 탭 업데이트 완료 (첫 번째 항목)")
+                            else:
+                                self.update_log("⚠️ 장비 유형이 없어 Default DB 탭 업데이트 실패")
                 
             except Exception as e:
                 messagebox.showerror("❌ 오류", f"Default DB 추가 중 오류 발생:\n{str(e)}")
@@ -1284,8 +1330,14 @@ class DBManager:
 
         ttk.Button(button_frame, text="✅ Default DB에 추가", command=on_confirm).pack(side=tk.RIGHT, padx=5)
         
+        # 다이얼로그 강제 업데이트 및 포커스
+        dlg.update_idletasks()
+        dlg.lift()
+        dlg.focus_force()
+        
         # 초기 미리보기 업데이트
-        self.window.after(100, update_preview)
+        dlg.after(200, update_preview)
+        update_confidence_label()  # 초기 신뢰도 라벨 설정
 
     def analyze_parameter_statistics(self, selected_items):
         """
@@ -1337,11 +1389,34 @@ class DBManager:
                 except (ValueError, TypeError):
                     pass
             
+            # ItemType 정보 추출 (merged_df에서 해당 파라미터의 ItemType 찾기)
+            item_type = 'double'  # 기본값
+            item_description = ''  # 기본값
+            if hasattr(self, 'merged_df') and self.merged_df is not None:
+                # 현재 아이템과 동일한 Module, Part, ItemName을 가진 행에서 ItemType과 ItemDescription 찾기
+                matching_rows = self.merged_df[
+                    (self.merged_df['Module'] == module) & 
+                    (self.merged_df['Part'] == part) & 
+                    (self.merged_df['ItemName'] == item_name)
+                ]
+                if not matching_rows.empty:
+                    if 'ItemType' in matching_rows.columns:
+                        item_type_values = matching_rows['ItemType'].dropna().unique()
+                        if len(item_type_values) > 0:
+                            item_type = item_type_values[0]  # 첫 번째 값 사용
+                    
+                    if 'ItemDescription' in matching_rows.columns:
+                        item_desc_values = matching_rows['ItemDescription'].dropna().unique()
+                        if len(item_desc_values) > 0:
+                            item_description = item_desc_values[0]  # 첫 번째 값 사용
+            
             stats_info = {
                 'param_name': param_name,
                 'module': module,
                 'part': part,
                 'item_name': item_name,
+                'item_type': item_type,
+                'item_description': item_description,
                 'all_values': file_values,
                 'value_counts': dict(value_counts),
                 'most_common_value': most_common_value,
@@ -1414,7 +1489,11 @@ class DBManager:
                     max_spec,
                     stats['occurrence_count'],
                     stats['total_files'],
-                    stats['source_files']
+                    stats['source_files'],
+                    description=stats.get('item_description', ''),
+                    module_name=stats.get('module', ''),
+                    part_name=stats.get('part', ''),
+                    item_type=stats.get('item_type', 'double')
                 )
                 
                 if existing_stats:
@@ -1455,9 +1534,33 @@ class DBManager:
             
             param_name = f"{part}_{item_name}"
             
+            # merged_df에서 ItemType과 ItemDescription 정보 추출
+            item_type = 'double'  # 기본값
+            item_description = ''  # 기본값
+            if hasattr(self, 'merged_df') and self.merged_df is not None:
+                matching_rows = self.merged_df[
+                    (self.merged_df['Module'] == module) & 
+                    (self.merged_df['Part'] == part) & 
+                    (self.merged_df['ItemName'] == item_name)
+                ]
+                if not matching_rows.empty:
+                    if 'ItemType' in matching_rows.columns:
+                        item_type_values = matching_rows['ItemType'].dropna().unique()
+                        if len(item_type_values) > 0:
+                            item_type = item_type_values[0]
+                    
+                    if 'ItemDescription' in matching_rows.columns:
+                        item_desc_values = matching_rows['ItemDescription'].dropna().unique()
+                        if len(item_desc_values) > 0:
+                            item_description = item_desc_values[0]
+            
             try:
                 record_id = self.db_schema.add_default_value(
-                    type_id, param_name, value, None, None, 1, 1, self.file_names[0]
+                    type_id, param_name, value, None, None, 1, 1, self.file_names[0],
+                    description=item_description,
+                    module_name=module,
+                    part_name=part,
+                    item_type=item_type
                 )
                 
                 # 변경 이력 기록
@@ -1809,14 +1912,26 @@ class DBManager:
             param_frame = ttk.LabelFrame(control_frame, text="📊 파라미터 관리", padding=10)
             param_frame.pack(fill=tk.X, pady=5)
             
-            # 파라미터 관리 버튼들
+            # 파라미터 관리 버튼들 (첫 번째 줄)
             ttk.Button(param_frame, text="파라미터 추가", 
                       command=self.add_parameter_dialog).pack(side=tk.LEFT, padx=5)
             ttk.Button(param_frame, text="선택 항목 삭제", 
                       command=self.delete_selected_parameters).pack(side=tk.LEFT, padx=5)
-            ttk.Button(param_frame, text="Excel로 내보내기", 
+            
+            # 두 번째 줄: 텍스트 파일 기능 (우선)
+            text_frame = ttk.Frame(param_frame)
+            text_frame.pack(fill=tk.X, pady=5)
+            ttk.Button(text_frame, text="텍스트 파일에서 가져오기", 
+                      command=self.import_from_text_file).pack(side=tk.LEFT, padx=5)
+            ttk.Button(text_frame, text="텍스트 파일로 내보내기", 
+                      command=self.export_to_text_file).pack(side=tk.LEFT, padx=5)
+            
+            # 세 번째 줄: Excel 기능
+            excel_frame = ttk.Frame(param_frame)
+            excel_frame.pack(fill=tk.X, pady=5)
+            ttk.Button(excel_frame, text="Excel로 내보내기", 
                       command=self.export_default_db_to_excel).pack(side=tk.LEFT, padx=5)
-            ttk.Button(param_frame, text="Excel에서 가져오기", 
+            ttk.Button(excel_frame, text="Excel에서 가져오기", 
                       command=self.import_default_db_from_excel).pack(side=tk.LEFT, padx=5)
             
             # 파라미터 목록 트리뷰
@@ -1824,7 +1939,7 @@ class DBManager:
             tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
             
             # 트리뷰 생성
-            columns = ("id", "parameter_name", "default_value", "min_spec", "max_spec", 
+            columns = ("id", "parameter_name", "module", "part", "item_type", "default_value", "min_spec", "max_spec", 
                       "occurrence_count", "total_files", "confidence_score", "source_files", "description")
             
             self.default_db_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
@@ -1834,19 +1949,25 @@ class DBManager:
             headers = {
                 "id": "ID",
                 "parameter_name": "파라미터명",
-                "default_value": "설정값",  # 🔄 "기본값" → "설정값"으로 변경
+                "module": "Module",
+                "part": "Part", 
+                "item_type": "데이터 타입",
+                "default_value": "설정값",
                 "min_spec": "최소값",
                 "max_spec": "최대값",
                 "occurrence_count": "발생횟수",
                 "total_files": "전체파일",
                 "confidence_score": "신뢰도(%)",
                 "source_files": "소스파일",
-                "description": "설명"  # 🆕 description 컬럼 추가
+                "description": "설명"
             }
             
             column_widths = {
                 "id": 50,
-                "parameter_name": 200,
+                "parameter_name": 180,
+                "module": 80,
+                "part": 100,
+                "item_type": 80,
                 "default_value": 100,
                 "min_spec": 80,
                 "max_spec": 80,
@@ -1854,7 +1975,7 @@ class DBManager:
                 "total_files": 80,
                 "confidence_score": 80,
                 "source_files": 150,
-                "description": 150  # 🆕 description 컬럼 너비 추가
+                "description": 150
             }
             
             for col in columns:
@@ -2083,29 +2204,38 @@ class DBManager:
                 
                 record_id = record[0]
                 parameter_name = record[1]
-                default_value = record[2]
+                default_value = record[2] if record[2] is not None else ""
                 min_spec = record[3] if record[3] else ""
                 max_spec = record[4] if record[4] else ""
                 
-                # 새 컬럼들 처리 (없을 수도 있음)
+                # 스키마 반환 순서에 맞게 처리: 
+                # (id, parameter_name, default_value, min_spec, max_spec, type_name,
+                #  occurrence_count, total_files, confidence_score, source_files, description,
+                #  module_name, part_name, item_type, is_performance)
                 try:
                     occurrence_count = record[6] if len(record) > 6 else 1
                     total_files = record[7] if len(record) > 7 else 1
                     confidence_score = record[8] if len(record) > 8 else 1.0
                     source_files = record[9] if len(record) > 9 else ""
-                    description = record[10] if len(record) > 10 else ""  # 🆕 description 처리
+                    description = record[10] if len(record) > 10 and record[10] else f"This is a {parameter_name} Description"
+                    module_name = record[11] if len(record) > 11 and record[11] else "DSP"
+                    part_name = record[12] if len(record) > 12 and record[12] else "Unknown"
+                    item_type = record[13] if len(record) > 13 and record[13] else "double"
                 except IndexError:
                     occurrence_count = 1
                     total_files = 1
                     confidence_score = 1.0
                     source_files = ""
-                    description = ""
+                    description = f"This is a {parameter_name} Description"
+                    module_name = "DSP"
+                    part_name = "Unknown"
+                    item_type = "double"
                 
                 # 신뢰도를 퍼센트로 변환
                 confidence_percent = f"{confidence_score * 100:.1f}"
                 
-                values = (record_id, parameter_name, default_value, min_spec, max_spec,
-                         occurrence_count, total_files, confidence_percent, source_files, description)  # 🆕 description 추가
+                values = (record_id, parameter_name, module_name, part_name, item_type, default_value, min_spec, max_spec,
+                         occurrence_count, total_files, confidence_percent, source_files, description)
                 
                 self.default_db_tree.insert("", "end", values=values)
                 added_count += 1
@@ -2232,9 +2362,12 @@ class DBManager:
             messagebox.showwarning("경고", "먼저 장비 유형을 선택해주세요.")
             return
         
-        # 구현 예정
-        messagebox.showinfo("개발 중", "파라미터 수동 추가 기능은 개발 중입니다.\n"
-                                      "현재는 DB 비교 탭에서 'Default DB로 전송' 기능을 사용해주세요.")
+        # defaultdb.py의 add_parameter 기능 호출
+        if hasattr(self, 'add_parameter'):
+            self.add_parameter()
+        else:
+            messagebox.showinfo("개발 중", "파라미터 수동 추가 기능은 개발 중입니다.\n"
+                                          "현재는 DB 비교 탭에서 'Default DB로 전송' 기능을 사용해주세요.")
 
     def delete_selected_parameters(self):
         """선택된 파라미터들을 삭제합니다."""
@@ -2243,8 +2376,11 @@ class DBManager:
             messagebox.showwarning("경고", "삭제할 파라미터를 선택해주세요.")
             return
         
-        # 구현 예정
-        messagebox.showinfo("개발 중", "파라미터 삭제 기능은 개발 중입니다.")
+        # defaultdb.py의 delete_parameter 기능 호출
+        if hasattr(self, 'delete_parameter'):
+            self.delete_parameter()
+        else:
+            messagebox.showinfo("개발 중", "파라미터 삭제 기능은 개발 중입니다.")
 
     def edit_parameter_dialog(self, event):
         """파라미터 편집 다이얼로그"""
@@ -2252,18 +2388,253 @@ class DBManager:
         if not selected_item:
             return
         
-        # 구현 예정
-        messagebox.showinfo("개발 중", "파라미터 편집 기능은 개발 중입니다.")
+        # defaultdb.py의 edit_parameter 기능 호출
+        if hasattr(self, 'edit_parameter'):
+            self.edit_parameter()
+        else:
+            messagebox.showinfo("개발 중", "파라미터 편집 기능은 개발 중입니다.")
 
     def export_default_db_to_excel(self):
         """Default DB를 Excel로 내보내기"""
-        # 구현 예정
-        messagebox.showinfo("개발 중", "Excel 내보내기 기능은 개발 중입니다.")
+        # defaultdb.py의 export_to_excel 기능 호출
+        if hasattr(self, 'export_to_excel'):
+            self.export_to_excel()
+        else:
+            messagebox.showinfo("개발 중", "Excel 내보내기 기능은 개발 중입니다.")
 
     def import_default_db_from_excel(self):
         """Excel에서 Default DB 가져오기"""
-        # 구현 예정
-        messagebox.showinfo("개발 중", "Excel 가져오기 기능은 개발 중입니다.")
+        # defaultdb.py의 import_from_excel 기능 호출
+        if hasattr(self, 'import_from_excel'):
+            self.import_from_excel()
+        else:
+            messagebox.showinfo("개발 중", "Excel 가져오기 기능은 개발 중입니다.")
+    
+    def import_from_text_file(self):
+        """텍스트 파일에서 Default DB 가져오기 (원본 형식 지원)"""
+        try:
+            # 파일 선택 대화상자
+            from tkinter import filedialog
+            file_path = filedialog.askopenfilename(
+                title="텍스트 파일에서 가져오기",
+                filetypes=[("텍스트 파일", "*.txt"), ("모든 파일", "*.*")]
+            )
+            
+            if not file_path:
+                return
+            
+            # 파일 읽기 및 파싱
+            imported_data = []
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            if not lines:
+                messagebox.showwarning("경고", "파일이 비어있습니다.")
+                return
+            
+            # 헤더 확인
+            header = lines[0].strip().split('\t')
+            expected_header = ['Module', 'Part', 'ItemName', 'ItemType', 'ItemValue', 'ItemDescription']
+            
+            if header != expected_header:
+                messagebox.showwarning("경고", 
+                    f"파일 형식이 올바르지 않습니다.\n"
+                    f"예상 헤더: {expected_header}\n"
+                    f"실제 헤더: {header}")
+                return
+            
+            # 데이터 파싱
+            for line_num, line in enumerate(lines[1:], 2):
+                line = line.strip()
+                if not line:
+                    continue
+                
+                parts = line.split('\t')
+                if len(parts) != 6:
+                    messagebox.showwarning("경고", f"라인 {line_num}: 컬럼 개수가 맞지 않습니다.")
+                    continue
+                
+                imported_data.append({
+                    'module': parts[0],
+                    'part': parts[1],
+                    'item_name': parts[2],
+                    'item_type': parts[3],
+                    'item_value': parts[4],
+                    'item_description': parts[5]
+                })
+            
+            if not imported_data:
+                messagebox.showinfo("알림", "가져올 데이터가 없습니다.")
+                return
+            
+            # 장비 유형 선택/생성 대화상자
+            import os
+            file_name = os.path.splitext(os.path.basename(file_path))[0]
+            
+            # 간단한 장비 유형 입력 대화상자
+            type_dialog = tk.Toplevel(self.window)
+            type_dialog.title("장비 유형 선택")
+            type_dialog.geometry("400x200")
+            type_dialog.transient(self.window)
+            type_dialog.grab_set()
+            
+            ttk.Label(type_dialog, text="장비 유형명을 입력하세요:").pack(pady=10)
+            
+            type_var = tk.StringVar(value=file_name)
+            type_entry = ttk.Entry(type_dialog, textvariable=type_var, width=40)
+            type_entry.pack(pady=5)
+            
+            result = {'confirmed': False, 'type_name': ''}
+            
+            def on_ok():
+                if type_var.get().strip():
+                    result['confirmed'] = True
+                    result['type_name'] = type_var.get().strip()
+                    type_dialog.destroy()
+                else:
+                    messagebox.showwarning("경고", "장비 유형명을 입력해주세요.")
+            
+            def on_cancel():
+                type_dialog.destroy()
+            
+            ttk.Button(type_dialog, text="확인", command=on_ok).pack(side=tk.LEFT, padx=20, pady=20)
+            ttk.Button(type_dialog, text="취소", command=on_cancel).pack(side=tk.RIGHT, padx=20, pady=20)
+            
+            type_dialog.wait_window()
+            
+            if not result['confirmed']:
+                return
+            
+            # 장비 유형 추가/확인
+            type_name = result['type_name']
+            type_id = self.db_schema.add_equipment_type(
+                type_name, 
+                f"텍스트 파일에서 가져옴: {os.path.basename(file_path)}"
+            )
+            
+            # 데이터 추가
+            added_count = 0
+            updated_count = 0
+            error_count = 0
+            
+            for data in imported_data:
+                try:
+                    param_name = f"{data['part']}_{data['item_name']}"
+                    
+                    # 기존 파라미터 확인
+                    existing = self.db_schema.get_parameter_statistics(type_id, param_name)
+                    
+                    record_id = self.db_schema.add_default_value(
+                        equipment_type_id=type_id,
+                        parameter_name=param_name,
+                        default_value=data['item_value'],
+                        min_spec=None,
+                        max_spec=None,
+                        occurrence_count=1,
+                        total_files=1,
+                        source_files=os.path.basename(file_path),
+                        description=data['item_description'],
+                        module_name=data['module'],
+                        part_name=data['part'],
+                        item_type=data['item_type']
+                    )
+                    
+                    if existing:
+                        updated_count += 1
+                    else:
+                        added_count += 1
+                        
+                except Exception as e:
+                    error_count += 1
+                    self.update_log(f"파라미터 '{param_name}' 추가 실패: {str(e)}")
+            
+            # 결과 메시지
+            messagebox.showinfo(
+                "✅ 가져오기 완료",
+                f"텍스트 파일에서 Default DB로 성공적으로 가져왔습니다.\n\n"
+                f"📄 파일: {os.path.basename(file_path)}\n"
+                f"🏷️ 장비 유형: {type_name}\n"
+                f"✅ 새로 추가: {added_count}개\n"
+                f"🔄 업데이트: {updated_count}개\n"
+                f"❌ 오류: {error_count}개"
+            )
+            
+            # UI 업데이트
+            if hasattr(self, 'refresh_equipment_types'):
+                self.refresh_equipment_types()
+                # 방금 추가한 장비 유형 선택
+                if hasattr(self, 'equipment_type_combo'):
+                    type_names = self.equipment_type_combo['values']
+                    for type_option in type_names:
+                        if f"ID: {type_id}" in type_option:
+                            self.equipment_type_combo.set(type_option)
+                            if hasattr(self, 'on_equipment_type_selected'):
+                                self.on_equipment_type_selected()
+                            break
+            
+            self.update_log(f"텍스트 파일 가져오기 완료: {file_path} (추가 {added_count}개, 업데이트 {updated_count}개)")
+            
+        except Exception as e:
+            messagebox.showerror("❌ 오류", f"텍스트 파일 가져오기 중 오류 발생:\n{str(e)}")
+            self.update_log(f"텍스트 파일 가져오기 오류: {str(e)}")
+    
+    def export_to_text_file(self):
+        """Default DB를 텍스트 파일로 내보내기"""
+        try:
+            print("DEBUG: export_to_text_file 함수 시작")
+            
+            if not hasattr(self, 'equipment_type_combo') or not self.equipment_type_combo.get():
+                messagebox.showwarning("경고", "먼저 장비 유형을 선택해주세요.")
+                return
+            
+            # 현재 선택된 장비 유형 ID 추출
+            selected_type = self.equipment_type_combo.get()
+            print(f"DEBUG: Selected type: {selected_type}")
+            
+            if "ID: " not in selected_type:
+                messagebox.showwarning("경고", "유효한 장비 유형을 선택해주세요.")
+                return
+            
+            type_id = int(selected_type.split("ID: ")[1].split(")")[0])
+            type_name = selected_type.split(" (ID:")[0]
+            print(f"DEBUG: type_id: {type_id}, type_name: {type_name}")
+            
+            # 파일 저장 대화상자
+            from tkinter import filedialog
+            file_path = filedialog.asksaveasfilename(
+                title="텍스트 파일로 내보내기",
+                defaultextension=".txt",
+                filetypes=[("텍스트 파일", "*.txt"), ("모든 파일", "*.*")]
+            )
+            
+            if not file_path:
+                print("DEBUG: 파일 경로가 선택되지 않음")
+                return
+            
+            print(f"DEBUG: 선택된 파일 경로: {file_path}")
+            
+            # text_file_handler 초기화
+            if not hasattr(self, 'text_file_handler'):
+                from app.text_file_handler import TextFileHandler
+                self.text_file_handler = TextFileHandler(self.db_schema)
+            
+            # text_file_handler를 사용한 내보내기
+            print("DEBUG: text_file_handler를 사용한 내보내기 시작")
+            success, message = self.text_file_handler.export_to_text_file(type_id, file_path)
+            
+            if success:
+                messagebox.showinfo("✅ 내보내기 완료", message)
+                self.update_log(f"텍스트 파일 내보내기 완료: {file_path}")
+            else:
+                messagebox.showerror("❌ 오류", message)
+                self.update_log(f"텍스트 파일 내보내기 오류: {message}")
+                
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"DEBUG: export_to_text_file 오류:\n{error_details}")
+            messagebox.showerror("❌ 오류", f"텍스트 파일 내보내기 중 오류 발생:\n{str(e)}")
+            self.update_log(f"텍스트 파일 내보내기 오류: {str(e)}")
 
     def create_change_history_tab(self):
         """변경 이력 관리 탭 생성"""
