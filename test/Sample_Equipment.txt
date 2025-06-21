@@ -1,3 +1,7 @@
 Module	Part	ItemName	ItemType	ItemValue	ItemDescription
+DSP	Cantilever	Cantilever_AMinusBLowerThreshold	double	-5	This is a AMinusBLowerThreshold Description
+DSP	Cantilever	Cantilever_AMinusBLowerThresholdForPSPDAlign	double	-1	This is a AMinusBLowerThresholdForPSPDAlign Description
 DSP	Cantilever	Cantilever_AMinusBUpperThreshold	double	5	This is a AMinusBUpperThreshold Description
-DSP	Cantilever	Cantilever_AMinusBUpperThresholdForPSPDAlign	double	1	This is a AMinusBUpperThresholdForPSPDAlign Description
+DSP	Cantilever	Cantilever_ApproachSetPointRight	double	0.6	This is a ApproachSetPointRight Description
+DSP	Error	Error_0	int	5	[Spm] : Unknown spm command
+DSP	Error	Error_5	int	5	[Spm] : Command timeout

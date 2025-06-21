@@ -1253,7 +1253,7 @@ class DBManager:
                     col_offset = 1 if self.maint_mode else 0
                     module, part, item_name = item_values[col_offset], item_values[col_offset+1], item_values[col_offset+2]
                     value = item_values[col_offset+3]
-                    preview_text.insert(tk.END, f"  • {part}_{item_name}: {value}\n")
+                    preview_text.insert(tk.END, f"  • {item_name}: {value}\n")
                 if len(selected_items) > 10:
                     preview_text.insert(tk.END, f"  ... 및 {len(selected_items)-10}개 더\n")
                 return
@@ -1448,7 +1448,7 @@ class DBManager:
             col_offset = 1 if self.maint_mode else 0
             module, part, item_name = item_values[col_offset], item_values[col_offset+1], item_values[col_offset+2]
             
-            param_name = f"{part}_{item_name}"
+            param_name = item_name  # ItemName만 사용하여 통일
             
             # 모든 파일에서 해당 파라미터의 값 수집
             file_values = []
@@ -1621,7 +1621,7 @@ class DBManager:
             # 첫 번째 파일의 값을 사용
             value = item_values[col_offset+3] 
             
-            param_name = f"{part}_{item_name}"
+            param_name = item_name  # ItemName만 사용하여 통일
             
             # merged_df에서 ItemType과 ItemDescription 정보 추출
             item_type = 'double'  # 기본값
@@ -1851,7 +1851,8 @@ class DBManager:
                 if type_name.lower() == module.lower():
                     default_values = self.db_schema.get_default_values(type_id)
                     for _, param_name, _, _, _, _ in default_values:
-                        if param_name == f"{part}_{item_name}" or param_name == item_name:
+                        # ItemName만으로 체크하도록 통일
+                        if param_name == item_name:
                             return True
             return False
         except Exception as e:
@@ -1972,105 +1973,121 @@ class DBManager:
             self.main_notebook.add(self.default_db_frame, text="Default DB 관리")
             self.update_log("✅ Default DB 탭 프레임 생성 완료")
             
-            # 상단 제어 패널
-            control_frame = ttk.Frame(self.default_db_frame)
-            control_frame.pack(fill=tk.X, padx=10, pady=5)
+            # 상단 제어 패널 - 배경색과 패딩 개선
+            control_frame = ttk.Frame(self.default_db_frame, style="Control.TFrame")
+            control_frame.pack(fill=tk.X, padx=15, pady=10)
             
             # 장비 유형 관리 섹션
-            equipment_frame = ttk.LabelFrame(control_frame, text="🔧 장비 유형 관리", padding=10)
-            equipment_frame.pack(fill=tk.X, pady=5)
+            equipment_frame = ttk.LabelFrame(control_frame, text="Equipment Type Management", padding=12)
+            equipment_frame.pack(fill=tk.X, pady=(0, 8))
             
             # 장비 유형 선택
-            ttk.Label(equipment_frame, text="장비 유형:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+            type_select_frame = ttk.Frame(equipment_frame)
+            type_select_frame.pack(fill=tk.X, pady=(0, 8))
+            
+            ttk.Label(type_select_frame, text="Equipment Type:", font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(0, 8))
             self.equipment_type_var = tk.StringVar()
-            self.equipment_type_combo = ttk.Combobox(equipment_frame, textvariable=self.equipment_type_var, 
-                                                   state="readonly", width=30)
-            self.equipment_type_combo.grid(row=0, column=1, padx=5, pady=5)
+            self.equipment_type_combo = ttk.Combobox(type_select_frame, textvariable=self.equipment_type_var, 
+                                                   state="readonly", width=40, font=("Segoe UI", 9))
+            self.equipment_type_combo.pack(side=tk.LEFT, padx=(0, 12))
             self.equipment_type_combo.bind("<<ComboboxSelected>>", self.on_equipment_type_selected)
             self.update_log("✅ 장비 유형 콤보박스 생성 완료")
             
             # 장비 유형 관리 버튼들
-            ttk.Button(equipment_frame, text="새 장비 유형 추가", 
-                      command=self.add_equipment_type_dialog).grid(row=0, column=2, padx=5, pady=5)
-            ttk.Button(equipment_frame, text="삭제", 
-                      command=self.delete_equipment_type).grid(row=0, column=3, padx=5, pady=5)
-            ttk.Button(equipment_frame, text="새로고침", 
-                      command=self.refresh_equipment_types).grid(row=0, column=4, padx=5, pady=5)
+            type_buttons_frame = ttk.Frame(equipment_frame)
+            type_buttons_frame.pack(fill=tk.X)
+            
+            add_type_btn = ttk.Button(type_buttons_frame, text="Add Equipment Type", 
+                                    command=self.add_equipment_type_dialog, width=18)
+            add_type_btn.pack(side=tk.LEFT, padx=(0, 6))
+            
+            delete_type_btn = ttk.Button(type_buttons_frame, text="Delete", 
+                                       command=self.delete_equipment_type, width=10)
+            delete_type_btn.pack(side=tk.LEFT, padx=(0, 6))
+            
+            refresh_btn = ttk.Button(type_buttons_frame, text="Refresh", 
+                                   command=self.refresh_equipment_types, width=10)
+            refresh_btn.pack(side=tk.LEFT, padx=(0, 6))
             
             # 파라미터 관리 섹션
-            param_frame = ttk.LabelFrame(control_frame, text="📊 파라미터 관리", padding=10)
-            param_frame.pack(fill=tk.X, pady=5)
+            param_frame = ttk.LabelFrame(control_frame, text="Parameter Management", padding=12)
+            param_frame.pack(fill=tk.X, pady=(0, 8))
             
-            # 첫 번째 줄: 기본 관리 버튼들
+            # 기본 관리 버튼들
             basic_mgmt_frame = ttk.Frame(param_frame)
-            basic_mgmt_frame.pack(fill=tk.X, pady=2)
+            basic_mgmt_frame.pack(fill=tk.X, pady=(0, 8))
             
-            ttk.Button(basic_mgmt_frame, text="파라미터 추가", 
-                      command=self.add_parameter_dialog).pack(side=tk.LEFT, padx=5)
-            ttk.Button(basic_mgmt_frame, text="선택 항목 삭제", 
-                      command=self.delete_selected_parameters).pack(side=tk.LEFT, padx=5)
+            add_param_btn = ttk.Button(basic_mgmt_frame, text="Add Parameter", 
+                                     command=self.add_parameter_dialog, width=15)
+            add_param_btn.pack(side=tk.LEFT, padx=(0, 6))
             
-
+            delete_param_btn = ttk.Button(basic_mgmt_frame, text="Delete Selected", 
+                                        command=self.delete_selected_parameters, width=15)
+            delete_param_btn.pack(side=tk.LEFT, padx=(0, 6))
             
-            # 두 번째 줄: 필터링 및 보기 옵션
+            # 필터링 및 보기 옵션
             filter_frame = ttk.Frame(param_frame)
-            filter_frame.pack(fill=tk.X, pady=2)
+            filter_frame.pack(fill=tk.X, pady=(0, 8))
             
-            # 🆕 Performance 필터 체크박스
+            # Performance 필터 체크박스
             self.show_performance_only_var = tk.BooleanVar()
             performance_cb = ttk.Checkbutton(
                 filter_frame, 
-                text="🎯 Performance 항목만 표시", 
+                text="Show Performance Parameters Only", 
                 variable=self.show_performance_only_var,
                 command=self.apply_performance_filter
             )
-            performance_cb.pack(side=tk.LEFT, padx=5)
+            performance_cb.pack(side=tk.LEFT, padx=(0, 12))
             
-
-            
-
-            
-            # 세 번째 줄: 텍스트 파일 기능
+            # 텍스트 파일 기능
             text_frame = ttk.Frame(param_frame)
-            text_frame.pack(fill=tk.X, pady=2)
-            ttk.Button(text_frame, text="텍스트 파일에서 가져오기", 
-                      command=self.import_from_text_file).pack(side=tk.LEFT, padx=5)
-            ttk.Button(text_frame, text="텍스트 파일로 내보내기", 
-                      command=self.export_to_text_file).pack(side=tk.LEFT, padx=5)
+            text_frame.pack(fill=tk.X)
+            
+            import_btn = ttk.Button(text_frame, text="Import from Text File", 
+                                  command=self.import_from_text_file, width=18)
+            import_btn.pack(side=tk.LEFT, padx=(0, 6))
+            
+            export_btn = ttk.Button(text_frame, text="Export to Text File", 
+                                  command=self.export_to_text_file, width=18)
+            export_btn.pack(side=tk.LEFT, padx=(0, 6))
             
             # Excel 기능 제거됨
             
             # 파라미터 목록 트리뷰
-            tree_frame = ttk.Frame(self.default_db_frame)
-            tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+            tree_container = ttk.LabelFrame(self.default_db_frame, text="Parameter List", padding=10)
+            tree_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 8))
             
-            # 🆕 트리뷰 컬럼에 Performance 추가 (통계 관련 컬럼 제거)
+            tree_frame = ttk.Frame(tree_container)
+            tree_frame.pack(fill=tk.BOTH, expand=True)
+            
+            # 트리뷰 컬럼 정의
             columns = ("id", "parameter_name", "module", "part", "item_type", "default_value", "min_spec", "max_spec", 
                       "is_performance", "description")
             
-            self.default_db_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
+            self.default_db_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=20)
             self.update_log("✅ Default DB 트리뷰 생성 완료")
             
-            # 🆕 컬럼 헤더 설정 (Performance 컬럼 추가, 통계 관련 컬럼 제거)
+            # 컬럼 헤더 설정
             headers = {
                 "id": "ID",
-                "parameter_name": "파라미터명",
+                "parameter_name": "ItemName",
                 "module": "Module",
                 "part": "Part", 
-                "item_type": "데이터 타입",
-                "default_value": "설정값",
-                "min_spec": "최소값",
-                "max_spec": "최대값",
-                "is_performance": "🎯 Performance",
-                "description": "설명"
+                "item_type": "Data Type",
+                "default_value": "Default Value",
+                "min_spec": "Min Spec",
+                "max_spec": "Max Spec",
+                "is_performance": "Performance",
+                "description": "Description"
             }
             
+            # 컬럼 너비 최적화
             column_widths = {
                 "id": 50,
-                "parameter_name": 180,
+                "parameter_name": 220,
                 "module": 80,
                 "part": 100,
-                "item_type": 80,
+                "item_type": 85,
                 "default_value": 100,
                 "min_spec": 80,
                 "max_spec": 80,
@@ -2082,17 +2099,17 @@ class DBManager:
                 self.default_db_tree.heading(col, text=headers[col])
                 self.default_db_tree.column(col, width=column_widths[col], minwidth=50)
             
-            # 스크롤바 추가
+            # 스크롤바 추가 - 스타일 개선
             db_scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.default_db_tree.yview)
             self.default_db_tree.configure(yscrollcommand=db_scrollbar.set)
             
             db_h_scrollbar = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.default_db_tree.xview)
             self.default_db_tree.configure(xscrollcommand=db_h_scrollbar.set)
             
-            # 배치
-            self.default_db_tree.grid(row=0, column=0, sticky="nsew")
-            db_scrollbar.grid(row=0, column=1, sticky="ns")
-            db_h_scrollbar.grid(row=1, column=0, sticky="ew")
+            # 배치 - 간격 조정
+            self.default_db_tree.grid(row=0, column=0, sticky="nsew", padx=(0, 2), pady=(0, 2))
+            db_scrollbar.grid(row=0, column=1, sticky="ns", pady=(0, 2))
+            db_h_scrollbar.grid(row=1, column=0, sticky="ew", padx=(0, 2))
             
             tree_frame.grid_rowconfigure(0, weight=1)
             tree_frame.grid_columnconfigure(0, weight=1)
@@ -2105,14 +2122,20 @@ class DBManager:
             self.default_db_tree.bind("<Button-3>", self.show_default_db_context_menu)
             
             # 상태 표시줄
-            status_frame = ttk.Frame(self.default_db_frame)
-            status_frame.pack(fill=tk.X, padx=10, pady=5)
+            status_container = ttk.LabelFrame(self.default_db_frame, text="Status Information", padding=10)
+            status_container.pack(fill=tk.X, padx=15, pady=(0, 8))
             
-            self.default_db_status_label = ttk.Label(status_frame, text="장비 유형을 선택하세요.")
+            status_frame = ttk.Frame(status_container)
+            status_frame.pack(fill=tk.X)
+            
+            # 상태 메시지
+            self.default_db_status_label = ttk.Label(status_frame, text="Please select an equipment type.", 
+                                                   font=("Segoe UI", 9))
             self.default_db_status_label.pack(side=tk.LEFT)
             
-            # 🆕 Performance 통계 표시
-            self.performance_stats_label = ttk.Label(status_frame, text="", foreground="blue")
+            # Performance 통계 표시
+            self.performance_stats_label = ttk.Label(status_frame, text="", 
+                                                   foreground="#2E5BBA", font=("Segoe UI", 9, "bold"))
             self.performance_stats_label.pack(side=tk.RIGHT)
             
             self.update_log("✅ Default DB 상태 표시줄 생성 완료")
@@ -2324,6 +2347,11 @@ class DBManager:
                 
                 record_id = record[0]
                 parameter_name = record[1]
+                # ItemName 표시 시 "Cantilever_" 부분 제거하여 시인성 향상
+                display_name = parameter_name
+                if display_name.startswith("Cantilever_"):
+                    display_name = display_name[11:]  # "Cantilever_" 제거
+                
                 default_value = record[2] if record[2] is not None else ""
                 min_spec = record[3] if record[3] else ""
                 max_spec = record[4] if record[4] else ""
@@ -2360,9 +2388,9 @@ class DBManager:
                         continue  # Performance가 아닌 항목은 건너뛰기
                 
                 # Performance 상태 표시
-                performance_display = "✅ Yes" if is_performance else "❌ No"
+                performance_display = "Yes" if is_performance else "No"
                 
-                values = (record_id, parameter_name, module_name, part_name, item_type, default_value, min_spec, max_spec,
+                values = (record_id, display_name, module_name, part_name, item_type, default_value, min_spec, max_spec,
                          performance_display, description)
                 
                 self.default_db_tree.insert("", "end", values=values)
@@ -3029,7 +3057,7 @@ class DBManager:
             
             for data in imported_data:
                 try:
-                    param_name = f"{data['part']}_{data['item_name']}"
+                    param_name = data['item_name']  # ItemName만 사용하여 통일
                     
                     # 기존 파라미터 확인
                     existing = self.db_schema.get_parameter_statistics(type_id, param_name)
@@ -3202,7 +3230,7 @@ class DBManager:
             col_offset = 1 if self.maint_mode else 0
             module, part, item_name = item_values[col_offset], item_values[col_offset+1], item_values[col_offset+2]
             
-            param_name = f"{part}_{item_name}"
+            param_name = item_name  # ItemName만 사용하여 통일
             current_value = item_values[col_offset+3] if len(item_values) > col_offset+3 else ""
             
             # 1. 정확한 이름 매칭 검사
@@ -3827,39 +3855,17 @@ class DBManager:
 
 
     def create_default_db_context_menu(self):
-        """Default DB 트리뷰용 우클릭 메뉴 생성"""
+        """Default DB 트리뷰용 우클릭 메뉴 생성 - Performance 관리 전용"""
         self.default_db_context_menu = tk.Menu(self.window, tearoff=0)
         
-        # Performance 관련 메뉴
+        # Performance 관련 메뉴만 유지 (엔지니어링 스타일)
         self.default_db_context_menu.add_command(
-            label="🎯 Performance로 설정", 
+            label="Set as Performance", 
             command=lambda: self.set_performance_status(True)
         )
         self.default_db_context_menu.add_command(
-            label="❌ Performance 해제", 
+            label="Remove Performance", 
             command=lambda: self.set_performance_status(False)
-        )
-        self.default_db_context_menu.add_command(
-            label="🔄 Performance 토글", 
-            command=self.toggle_performance_status
-        )
-        self.default_db_context_menu.add_separator()
-        
-        # 기본 편집 메뉴
-        self.default_db_context_menu.add_command(
-            label="✏️ 편집", 
-            command=lambda: self.edit_parameter_dialog(None)
-        )
-        self.default_db_context_menu.add_command(
-            label="🗑️ 삭제", 
-            command=self.delete_selected_parameters
-        )
-        self.default_db_context_menu.add_separator()
-        
-        # 정보 메뉴
-        self.default_db_context_menu.add_command(
-            label="📊 상세 정보", 
-            command=self.show_parameter_details
         )
 
     def show_default_db_context_menu(self, event):
@@ -3923,62 +3929,7 @@ class DBManager:
 
 
 
-    def show_parameter_details(self):
-        """선택된 파라미터의 상세 정보 표시"""
-        try:
-            selected_items = self.default_db_tree.selection()
-            if not selected_items:
-                messagebox.showwarning("선택 필요", "상세 정보를 볼 파라미터를 선택해주세요.")
-                return
-            
-            item = selected_items[0]  # 첫 번째 선택 항목
-            values = self.default_db_tree.item(item, 'values')
-            if not values:
-                return
-            
-            # 상세 정보 다이얼로그 생성
-            detail_window = tk.Toplevel(self.window)
-            detail_window.title("📊 파라미터 상세 정보")
-            detail_window.geometry("500x400")
-            detail_window.transient(self.window)
-            detail_window.grab_set()
-            
-            # 정보 표시
-            info_text = tk.Text(detail_window, wrap=tk.WORD, padx=10, pady=10)
-            info_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-            
-            # 파라미터 정보 구성
-            param_info = f"""📋 파라미터 상세 정보
 
-🔧 기본 정보:
-• ID: {values[0]}
-• 파라미터명: {values[1]}
-• Module: {values[2]}
-• Part: {values[3]}
-• 데이터 타입: {values[4]}
-
-⚙️ 설정값:
-• 기본값: {values[5]}
-• 최소값: {values[6]}
-• 최대값: {values[7]}
-
-🎯 Performance 설정:
-• Performance 항목: {"✅ Yes" if values[8] == "✅ Yes" else "❌ No"}
-
-📝 설명:
-{values[9]}
-"""
-            
-            info_text.insert(tk.END, param_info)
-            info_text.config(state=tk.DISABLED)
-            
-            # 닫기 버튼
-            ttk.Button(detail_window, text="닫기", command=detail_window.destroy).pack(pady=10)
-            
-        except Exception as e:
-            error_msg = f"상세 정보 표시 오류: {str(e)}"
-            self.update_log(f"❌ {error_msg}")
-            messagebox.showerror("오류", error_msg)
 
 
 
