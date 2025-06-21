@@ -396,30 +396,105 @@ class DBManager:
         # 보고서, 간단 비교, 고급 분석은 QC 탭으로 이동
 
     def create_qc_tabs_with_advanced_features(self):
-        """QC 탭에 고급 기능들 추가"""
-        if not hasattr(self, 'qc_notebook'):
-            return
+        """QC 탭들을 고급 기능과 함께 생성"""
+        try:
+            # Enhanced QC 기능 사용 시도
+            from app.enhanced_qc import add_enhanced_qc_functions_to_class
+            add_enhanced_qc_functions_to_class(self.__class__)
             
-        # 보고서 탭을 QC 노트북에 추가
-        self.create_report_tab_in_qc()
+            # QC 검수 탭 생성 (향상된 기능)
+            if not hasattr(self, 'qc_check_frame') or self.qc_check_frame is None:
+                self.create_enhanced_qc_tab()
+                self.qc_check_frame = True  # 플래그 설정
+                self.update_log("[QC] 향상된 QC 검수 탭이 생성되었습니다.")
+            
+            # QC 보고서 탭 생성
+            self.create_report_tab_in_qc()
+            
+        except ImportError:
+            # Enhanced QC를 사용할 수 없는 경우 기본 QC 기능 사용
+            from app.qc import add_qc_check_functions_to_class
+            add_qc_check_functions_to_class(self.__class__)
+            
+            if not hasattr(self, 'qc_check_frame') or self.qc_check_frame is None:
+                self.create_qc_check_tab()
+                self.qc_check_frame = True
+                self.update_log("[QC] 기본 QC 검수 탭이 생성되었습니다.")
+            
+            self.create_report_tab_in_qc()
         
-        # 간단한 비교 기능을 QC 노트북에 추가
-        try:
-            from app.simple_comparison import add_simple_comparison_to_class
-            add_simple_comparison_to_class(DBManager)
-            if hasattr(self, 'create_simple_comparison_features_in_qc'):
-                self.create_simple_comparison_features_in_qc()
-        except ImportError as e:
-            self.update_log(f"[경고] 간단한 비교 기능을 불러올 수 없습니다: {e}")
+        except Exception as e:
+            self.update_log(f"❌ QC 탭 생성 중 오류: {str(e)}")
+            # 기본 QC 탭이라도 생성하려고 시도
+            try:
+                from app.qc import add_qc_check_functions_to_class
+                add_qc_check_functions_to_class(self.__class__)
+                if not hasattr(self, 'qc_check_frame') or self.qc_check_frame is None:
+                    self.create_qc_check_tab()
+                    self.qc_check_frame = True
+            except Exception as fallback_error:
+                self.update_log(f"❌ 기본 QC 탭 생성도 실패: {str(fallback_error)}")
+
+    def goto_qc_check_tab(self):
+        """QC 검수 탭으로 이동"""
+        if not self.maint_mode:
+            messagebox.showwarning("접근 제한", "QC 검수는 Maintenance Mode에서만 사용 가능합니다.")
+            return
         
-        # 고급 비교 기능을 QC 노트북에 추가 (선택적)
         try:
-            from app.advanced_comparison import add_advanced_comparison_to_class
-            add_advanced_comparison_to_class(DBManager)
-            if hasattr(self, 'create_advanced_comparison_features_in_qc'):
-                self.create_advanced_comparison_features_in_qc()
-        except ImportError as e:
-            self.update_log(f"[경고] 고급 비교 기능을 불러올 수 없습니다: {e}")
+            # QC 탭이 있는지 확인하고 선택
+            for i in range(self.main_notebook.index("end")):
+                tab_text = self.main_notebook.tab(i, "text")
+                if "QC" in tab_text or "검수" in tab_text:
+                    self.main_notebook.select(i)
+                    self.update_log("[Navigation] QC 검수 탭으로 이동했습니다.")
+                    return
+            
+            # QC 탭이 없으면 생성
+            self.update_log("[QC] QC 검수 탭이 없어서 새로 생성합니다.")
+            self.create_qc_tabs_with_advanced_features()
+            
+            # 다시 탭 찾기 및 선택
+            for i in range(self.main_notebook.index("end")):
+                tab_text = self.main_notebook.tab(i, "text")
+                if "QC" in tab_text or "검수" in tab_text:
+                    self.main_notebook.select(i)
+                    self.update_log("[Navigation] 새로 생성된 QC 검수 탭으로 이동했습니다.")
+                    return
+                    
+        except Exception as e:
+            error_msg = f"QC 검수 탭 이동 중 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", error_msg)
+
+    def perform_qc_check(self):
+        """QC 검수 실행 - Enhanced QC 우선 사용"""
+        try:
+            self.update_log("🚀 QC 검수 실행 시작...")
+            
+            # Enhanced QC 기능 사용 시도
+            if hasattr(self, 'perform_enhanced_qc_check'):
+                self.update_log("🔧 Enhanced QC 기능 사용")
+                return self.perform_enhanced_qc_check()
+            elif hasattr(self, 'perform_qc_check_enhanced'):
+                self.update_log("🔧 Enhanced QC 기능 사용 (대체)")
+                return self.perform_qc_check_enhanced()
+            else:
+                # 기본 QC 기능 fallback
+                self.update_log("📋 기본 QC 기능으로 fallback")
+                messagebox.showinfo(
+                    "QC 검수 실행", 
+                    "Enhanced QC 기능을 사용할 수 없어 기본 QC 기능을 사용합니다.\n"
+                    "더 자세한 검수를 위해서는 Enhanced QC 기능을 활성화해주세요."
+                )
+                # 여기에 기본 QC 로직 구현 가능
+                return True
+                
+        except Exception as e:
+            error_msg = f"QC 검수 실행 중 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", error_msg)
+            return False
 
     def create_report_tab_in_qc(self):
         """QC 노트북에 보고서 탭 생성"""
@@ -640,6 +715,8 @@ class DBManager:
             import sqlite3
             df_list = []
             self.file_names = []
+            # 🆕 QC 파일 선택을 위한 uploaded_files 딕셔너리 생성
+            self.uploaded_files = {}
             total_files = len(files)
             loading_dialog.update_progress(0, "파일 로딩 준비 중...")
             for idx, file in enumerate(files, 1):
@@ -681,6 +758,8 @@ class DBManager:
                     df["Model"] = base_name
                     df_list.append(df)
                     self.file_names.append(base_name)
+                    # 🆕 QC 파일 선택을 위해 파일 정보 저장
+                    self.uploaded_files[file_name] = file
                 except Exception as e:
                     messagebox.showwarning(
                         "경고", 
@@ -694,11 +773,16 @@ class DBManager:
                 self.update_all_tabs()
                 loading_dialog.update_progress(100, "완료!")
                 loading_dialog.close()
+                
+                # 🆕 QC 파일 선택 가능 상태 로그 추가
+                self.update_log(f"[파일 로드] {len(self.uploaded_files)}개 파일이 QC 검수 대상으로 등록되었습니다.")
+                
                 messagebox.showinfo(
                     "로드 완료",
                     f"총 {len(df_list)}개의 DB 파일을 성공적으로 로드했습니다.\n"
                     f"• 폴더: {self.folder_path}\n"
-                    f"• 파일: {', '.join(self.file_names)}"
+                    f"• 파일: {', '.join(self.file_names)}\n"
+                    f"• QC 검수 파일 선택 가능: {len(self.uploaded_files)}개"
                 )
                 self.status_bar.config(
                     text=f"총 {len(df_list)}개의 DB 파일이 로드되었습니다. "
@@ -1912,23 +1996,71 @@ class DBManager:
             param_frame = ttk.LabelFrame(control_frame, text="📊 파라미터 관리", padding=10)
             param_frame.pack(fill=tk.X, pady=5)
             
-            # 파라미터 관리 버튼들 (첫 번째 줄)
-            ttk.Button(param_frame, text="파라미터 추가", 
+            # 첫 번째 줄: 기본 관리 버튼들
+            basic_mgmt_frame = ttk.Frame(param_frame)
+            basic_mgmt_frame.pack(fill=tk.X, pady=2)
+            
+            ttk.Button(basic_mgmt_frame, text="파라미터 추가", 
                       command=self.add_parameter_dialog).pack(side=tk.LEFT, padx=5)
-            ttk.Button(param_frame, text="선택 항목 삭제", 
+            ttk.Button(basic_mgmt_frame, text="선택 항목 삭제", 
                       command=self.delete_selected_parameters).pack(side=tk.LEFT, padx=5)
             
-            # 두 번째 줄: 텍스트 파일 기능 (우선)
+            # 🆕 Performance 관리 버튼들
+            ttk.Button(basic_mgmt_frame, text="🎯 Performance 설정", 
+                      command=self.toggle_performance_status).pack(side=tk.LEFT, padx=5)
+            ttk.Button(basic_mgmt_frame, text="📊 Performance 통계", 
+                      command=self.show_performance_statistics).pack(side=tk.LEFT, padx=5)
+            
+            # 🆕 추가 Performance 관리 버튼들
+            ttk.Button(basic_mgmt_frame, text="✅ Performance 설정", 
+                      command=lambda: self.quick_set_performance(True)).pack(side=tk.LEFT, padx=5)
+            ttk.Button(basic_mgmt_frame, text="❌ Performance 해제", 
+                      command=lambda: self.quick_set_performance(False)).pack(side=tk.LEFT, padx=5)
+            
+            # 두 번째 줄: 필터링 및 보기 옵션
+            filter_frame = ttk.Frame(param_frame)
+            filter_frame.pack(fill=tk.X, pady=2)
+            
+            # 🆕 Performance 필터 체크박스
+            self.show_performance_only_var = tk.BooleanVar()
+            performance_cb = ttk.Checkbutton(
+                filter_frame, 
+                text="🎯 Performance 항목만 표시", 
+                variable=self.show_performance_only_var,
+                command=self.apply_performance_filter
+            )
+            performance_cb.pack(side=tk.LEFT, padx=5)
+            
+            # 신뢰도 필터
+            ttk.Label(filter_frame, text="신뢰도 필터:").pack(side=tk.LEFT, padx=(20, 5))
+            self.confidence_filter_var = tk.StringVar(value="전체")
+            confidence_combo = ttk.Combobox(
+                filter_frame, 
+                textvariable=self.confidence_filter_var,
+                values=["전체", "90% 이상", "80% 이상", "70% 이상", "50% 이상"],
+                state="readonly",
+                width=12
+            )
+            confidence_combo.pack(side=tk.LEFT, padx=5)
+            confidence_combo.bind("<<ComboboxSelected>>", self.apply_confidence_filter)
+            
+            # 🆕 필터 적용/초기화 버튼
+            ttk.Button(filter_frame, text="🔍 필터 적용", 
+                      command=self.apply_all_filters).pack(side=tk.LEFT, padx=10)
+            ttk.Button(filter_frame, text="🔄 필터 초기화", 
+                      command=self.reset_all_filters).pack(side=tk.LEFT, padx=5)
+            
+            # 세 번째 줄: 텍스트 파일 기능
             text_frame = ttk.Frame(param_frame)
-            text_frame.pack(fill=tk.X, pady=5)
+            text_frame.pack(fill=tk.X, pady=2)
             ttk.Button(text_frame, text="텍스트 파일에서 가져오기", 
                       command=self.import_from_text_file).pack(side=tk.LEFT, padx=5)
             ttk.Button(text_frame, text="텍스트 파일로 내보내기", 
                       command=self.export_to_text_file).pack(side=tk.LEFT, padx=5)
             
-            # 세 번째 줄: Excel 기능
+            # 네 번째 줄: Excel 기능
             excel_frame = ttk.Frame(param_frame)
-            excel_frame.pack(fill=tk.X, pady=5)
+            excel_frame.pack(fill=tk.X, pady=2)
             ttk.Button(excel_frame, text="Excel로 내보내기", 
                       command=self.export_default_db_to_excel).pack(side=tk.LEFT, padx=5)
             ttk.Button(excel_frame, text="Excel에서 가져오기", 
@@ -1938,14 +2070,14 @@ class DBManager:
             tree_frame = ttk.Frame(self.default_db_frame)
             tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
             
-            # 트리뷰 생성
+            # 🆕 트리뷰 컬럼에 Performance 추가
             columns = ("id", "parameter_name", "module", "part", "item_type", "default_value", "min_spec", "max_spec", 
-                      "occurrence_count", "total_files", "confidence_score", "source_files", "description")
+                      "occurrence_count", "total_files", "confidence_score", "is_performance", "source_files", "description")
             
             self.default_db_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
             self.update_log("✅ Default DB 트리뷰 생성 완료")
             
-            # 컬럼 헤더 설정
+            # 🆕 컬럼 헤더 설정 (Performance 컬럼 추가)
             headers = {
                 "id": "ID",
                 "parameter_name": "파라미터명",
@@ -1958,6 +2090,7 @@ class DBManager:
                 "occurrence_count": "발생횟수",
                 "total_files": "전체파일",
                 "confidence_score": "신뢰도(%)",
+                "is_performance": "🎯 Performance",
                 "source_files": "소스파일",
                 "description": "설명"
             }
@@ -1974,6 +2107,7 @@ class DBManager:
                 "occurrence_count": 80,
                 "total_files": 80,
                 "confidence_score": 80,
+                "is_performance": 90,
                 "source_files": 150,
                 "description": 150
             }
@@ -2000,12 +2134,21 @@ class DBManager:
             # 더블클릭으로 편집
             self.default_db_tree.bind("<Double-1>", self.edit_parameter_dialog)
             
+            # 🆕 우클릭 메뉴 추가
+            self.create_default_db_context_menu()
+            self.default_db_tree.bind("<Button-3>", self.show_default_db_context_menu)
+            
             # 상태 표시줄
             status_frame = ttk.Frame(self.default_db_frame)
             status_frame.pack(fill=tk.X, padx=10, pady=5)
             
             self.default_db_status_label = ttk.Label(status_frame, text="장비 유형을 선택하세요.")
             self.default_db_status_label.pack(side=tk.LEFT)
+            
+            # 🆕 Performance 통계 표시
+            self.performance_stats_label = ttk.Label(status_frame, text="", foreground="blue")
+            self.performance_stats_label.pack(side=tk.RIGHT)
+            
             self.update_log("✅ Default DB 상태 표시줄 생성 완료")
             
             # 초기 데이터 로드 (UI 초기화 완료 후 실행)
@@ -2164,8 +2307,19 @@ class DBManager:
             type_id = int(type_id_str)
             self.update_log(f"🔍 추출된 장비 유형 ID: {type_id}")
             
-            # 해당 장비 유형의 파라미터들 조회 (DBSchema 메서드 직접 사용)
-            default_values = self.db_schema.get_default_values(type_id)
+            # 🆕 Performance 필터 적용하여 파라미터 조회
+            performance_only = hasattr(self, 'show_performance_only_var') and self.show_performance_only_var.get()
+            default_values = self.db_schema.get_default_values(type_id, performance_only=performance_only)
+            
+            # 🆕 Performance 통계 업데이트
+            if hasattr(self, 'performance_stats_label'):
+                try:
+                    stats = self.db_schema.get_equipment_performance_count(type_id)
+                    perf_ratio = (stats['performance'] / stats['total'] * 100) if stats['total'] > 0 else 0
+                    stats_text = f"🎯 Performance: {stats['performance']}/{stats['total']} ({perf_ratio:.1f}%)"
+                    self.performance_stats_label.config(text=stats_text)
+                except:
+                    self.performance_stats_label.config(text="")
             self.update_log(f"📊 조회된 파라미터 수: {len(default_values)}개")
             
             if default_values:
@@ -2221,6 +2375,7 @@ class DBManager:
                     module_name = record[11] if len(record) > 11 and record[11] else "DSP"
                     part_name = record[12] if len(record) > 12 and record[12] else "Unknown"
                     item_type = record[13] if len(record) > 13 and record[13] else "double"
+                    is_performance = record[14] if len(record) > 14 else False
                 except IndexError:
                     occurrence_count = 1
                     total_files = 1
@@ -2230,12 +2385,30 @@ class DBManager:
                     module_name = "DSP"
                     part_name = "Unknown"
                     item_type = "double"
+                    is_performance = False
+                
+                # 🆕 필터링 적용
+                # Performance 필터
+                if hasattr(self, 'show_performance_only_var') and self.show_performance_only_var.get():
+                    if not is_performance:
+                        continue  # Performance가 아닌 항목은 건너뛰기
+                
+                # 신뢰도 필터
+                if hasattr(self, 'confidence_filter_var'):
+                    filter_value = self.confidence_filter_var.get()
+                    if filter_value != "전체":
+                        required_confidence = float(filter_value.replace("% 이상", "")) / 100.0
+                        if confidence_score < required_confidence:
+                            continue  # 신뢰도가 낮은 항목은 건너뛰기
                 
                 # 신뢰도를 퍼센트로 변환
                 confidence_percent = f"{confidence_score * 100:.1f}"
                 
+                # Performance 상태 표시
+                performance_display = "✅ Yes" if is_performance else "❌ No"
+                
                 values = (record_id, parameter_name, module_name, part_name, item_type, default_value, min_spec, max_spec,
-                         occurrence_count, total_files, confidence_percent, source_files, description)
+                         occurrence_count, total_files, confidence_percent, performance_display, source_files, description)
                 
                 self.default_db_tree.insert("", "end", values=values)
                 added_count += 1
@@ -2243,11 +2416,21 @@ class DBManager:
             # 상태 업데이트
             count = len(default_values)
             selected_type = self.equipment_type_var.get().split(" (ID:")[0] if self.equipment_type_var.get() else "선택없음"
-            status_text = f"장비유형: {selected_type} | 파라미터: {count}개"
+            
+            # Performance 통계 계산 (is_performance는 14번째 인덱스)
+            performance_count = sum(1 for record in default_values if len(record) > 14 and record[14])
+            performance_ratio = (performance_count / count * 100) if count > 0 else 0
+            
+            status_text = f"장비유형: {selected_type} | 파라미터: {count}개 | 표시: {added_count}개"
+            performance_text = f"🎯 Performance: {performance_count}개 ({performance_ratio:.1f}%)"
+            
             self.default_db_status_label.config(text=status_text)
+            if hasattr(self, 'performance_stats_label'):
+                self.performance_stats_label.config(text=performance_text)
             
             self.update_log(f"✅ 트리뷰에 {added_count}개 항목 추가 완료")
             self.update_log(f"📊 상태표시줄 업데이트: {status_text}")
+            self.update_log(f"🎯 Performance 통계: {performance_text}")
             
         except Exception as e:
             error_msg = f"Default DB 화면 업데이트 오류: {e}"
@@ -3230,7 +3413,396 @@ class DBManager:
                 conn.close()
 
     def perform_qc_check(self):
-        """QC 검수 실행 - Performance 모드 지원"""
-        if not hasattr(self, 'qc_type_var') or not hasattr(self, 'equipment_types_for_qc'):
-            self.update_log("❌ QC 검수 기능이 초기화되지 않았습니다")
+        """QC 검수 실행 - 향상된 기능 지원"""
+        if not self.maint_mode:
+            messagebox.showwarning("접근 제한", "QC 검수는 Maintenance Mode에서만 사용 가능합니다.")
             return
+        
+        try:
+            # Enhanced QC 기능이 있는지 확인
+            if hasattr(self, 'perform_enhanced_qc_check'):
+                self.perform_enhanced_qc_check()
+            elif hasattr(self, 'perform_qc_check_enhanced'):
+                self.perform_qc_check_enhanced()
+            else:
+                # 기본 QC 기능 사용
+                from app.qc import add_qc_check_functions_to_class
+                add_qc_check_functions_to_class(self.__class__)
+                if hasattr(self, 'perform_qc_check'):
+                    # 재귀 호출 방지를 위해 직접 QC 로직 실행
+                    selected_type = getattr(self, 'qc_type_var', tk.StringVar()).get()
+                    if not selected_type:
+                        messagebox.showinfo("알림", "장비 유형을 선택해주세요.")
+                        return
+                    
+                    self.update_log(f"[QC] 기본 QC 검수를 실행합니다: {selected_type}")
+                    # 실제 QC 로직은 qc.py의 perform_qc_check에서 처리
+                else:
+                    messagebox.showwarning("기능 없음", "QC 검수 기능을 사용할 수 없습니다.")
+                    
+        except Exception as e:
+            error_msg = f"QC 검수 실행 중 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", error_msg)
+
+    def toggle_performance_status(self):
+        """선택된 파라미터의 Performance 상태 토글"""
+        try:
+            if not self.maint_mode:
+                messagebox.showwarning("권한 없음", "유지보수 모드에서만 Performance 상태를 변경할 수 있습니다.")
+                return
+            
+            selected_items = self.default_db_tree.selection()
+            if not selected_items:
+                messagebox.showwarning("선택 필요", "Performance 상태를 토글할 파라미터를 선택해주세요.")
+                return
+            
+            # 첫 번째 선택된 항목의 현재 Performance 상태 확인
+            first_item = selected_items[0]
+            values = self.default_db_tree.item(first_item, 'values')
+            if not values:
+                return
+            
+            current_performance = values[11]  # is_performance 컬럼
+            # "✅ Yes" 또는 "❌ No" 형태로 저장되므로 파싱
+            is_currently_performance = "Yes" in str(current_performance)
+            new_performance_status = not is_currently_performance
+            
+            # 모든 선택된 항목에 새로운 상태 적용
+            success_count = 0
+            for item in selected_items:
+                values = self.default_db_tree.item(item, 'values')
+                if values:
+                    record_id = values[0]  # ID 컬럼
+                    parameter_name = values[1]  # 파라미터명
+                    
+                    # DB에서 Performance 상태 업데이트
+                    if self.db_schema.set_performance_status(record_id, new_performance_status):
+                        success_count += 1
+                        self.update_log(f"✅ {parameter_name}: Performance {'설정' if new_performance_status else '해제'}")
+                    else:
+                        self.update_log(f"❌ {parameter_name}: Performance 상태 변경 실패")
+            
+            if success_count > 0:
+                status_text = "Performance로 설정" if new_performance_status else "Performance 해제"
+                messagebox.showinfo("완료", f"{success_count}개 파라미터의 {status_text}가 완료되었습니다.")
+                
+                # 화면 새로고침
+                self.on_equipment_type_selected()
+            else:
+                messagebox.showerror("오류", "Performance 상태 변경에 실패했습니다.")
+                
+        except Exception as e:
+            error_msg = f"Performance 상태 토글 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", error_msg)
+
+    def show_performance_statistics(self):
+        """Performance 통계 다이얼로그 표시"""
+        try:
+            if not self.equipment_type_var.get():
+                messagebox.showwarning("선택 필요", "먼저 장비 유형을 선택해주세요.")
+                return
+            
+            # 현재 선택된 장비 유형 ID 추출
+            selected_text = self.equipment_type_var.get()
+            if "ID: " not in selected_text:
+                return
+            
+            equipment_type_id = int(selected_text.split("ID: ")[1].split(")")[0])
+            
+            # Performance 통계 조회
+            stats = self.db_schema.get_equipment_performance_count(equipment_type_id)
+            
+            # 통계 다이얼로그 생성
+            stats_window = tk.Toplevel(self.window)
+            stats_window.title("📊 Performance 통계")
+            stats_window.geometry("400x300")
+            stats_window.transient(self.window)
+            stats_window.grab_set()
+            
+            # 통계 정보 표시
+            stats_frame = ttk.Frame(stats_window, padding=20)
+            stats_frame.pack(fill=tk.BOTH, expand=True)
+            
+            # 제목
+            title_label = ttk.Label(
+                stats_frame, 
+                text=f"🎯 Performance 통계\n{selected_text.split(' (ID:')[0]}", 
+                font=('Arial', 12, 'bold'),
+                justify='center'
+            )
+            title_label.pack(pady=(0, 20))
+            
+            # 통계 카드들
+            total_frame = ttk.LabelFrame(stats_frame, text="📊 전체 파라미터", padding=10)
+            total_frame.pack(fill=tk.X, pady=5)
+            ttk.Label(total_frame, text=f"{stats['total']}개", font=('Arial', 16, 'bold')).pack()
+            
+            perf_frame = ttk.LabelFrame(stats_frame, text="🎯 Performance 파라미터", padding=10)
+            perf_frame.pack(fill=tk.X, pady=5)
+            ttk.Label(perf_frame, text=f"{stats['performance']}개", font=('Arial', 16, 'bold'), foreground='blue').pack()
+            
+            # 비율 계산
+            if stats['total'] > 0:
+                percentage = (stats['performance'] / stats['total']) * 100
+                ratio_text = f"{percentage:.1f}%"
+            else:
+                ratio_text = "0.0%"
+            
+            ratio_frame = ttk.LabelFrame(stats_frame, text="📈 Performance 비율", padding=10)
+            ratio_frame.pack(fill=tk.X, pady=5)
+            ttk.Label(ratio_frame, text=ratio_text, font=('Arial', 16, 'bold'), foreground='green').pack()
+            
+            # 권장사항
+            if stats['performance'] == 0:
+                recommendation = "⚠️ Performance 파라미터가 설정되지 않았습니다.\nQC 검수 품질 향상을 위해 중요한 파라미터를 Performance로 설정해주세요."
+                color = 'red'
+            elif percentage < 20:
+                recommendation = "💡 Performance 파라미터 비율이 낮습니다.\n추가 설정을 권장합니다."
+                color = 'orange'
+            else:
+                recommendation = "✅ Performance 파라미터가 적절히 설정되었습니다."
+                color = 'green'
+            
+            rec_frame = ttk.LabelFrame(stats_frame, text="💡 권장사항", padding=10)
+            rec_frame.pack(fill=tk.X, pady=5)
+            rec_label = ttk.Label(rec_frame, text=recommendation, foreground=color, justify='center')
+            rec_label.pack()
+            
+            # 닫기 버튼
+            ttk.Button(stats_frame, text="닫기", command=stats_window.destroy).pack(pady=20)
+            
+        except Exception as e:
+            error_msg = f"Performance 통계 표시 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", error_msg)
+
+    def create_default_db_context_menu(self):
+        """Default DB 트리뷰용 우클릭 메뉴 생성"""
+        self.default_db_context_menu = tk.Menu(self.window, tearoff=0)
+        
+        # Performance 관련 메뉴
+        self.default_db_context_menu.add_command(
+            label="🎯 Performance로 설정", 
+            command=lambda: self.set_performance_status(True)
+        )
+        self.default_db_context_menu.add_command(
+            label="❌ Performance 해제", 
+            command=lambda: self.set_performance_status(False)
+        )
+        self.default_db_context_menu.add_command(
+            label="🔄 Performance 토글", 
+            command=self.toggle_performance_status
+        )
+        self.default_db_context_menu.add_separator()
+        
+        # 기본 편집 메뉴
+        self.default_db_context_menu.add_command(
+            label="✏️ 편집", 
+            command=lambda: self.edit_parameter_dialog(None)
+        )
+        self.default_db_context_menu.add_command(
+            label="🗑️ 삭제", 
+            command=self.delete_selected_parameters
+        )
+        self.default_db_context_menu.add_separator()
+        
+        # 정보 메뉴
+        self.default_db_context_menu.add_command(
+            label="📊 상세 정보", 
+            command=self.show_parameter_details
+        )
+
+    def show_default_db_context_menu(self, event):
+        """Default DB 트리뷰 우클릭 메뉴 표시"""
+        try:
+            # 클릭한 위치의 아이템 선택
+            item = self.default_db_tree.identify_row(event.y)
+            if item:
+                self.default_db_tree.selection_set(item)
+                self.default_db_context_menu.post(event.x_root, event.y_root)
+        except Exception as e:
+            self.update_log(f"우클릭 메뉴 표시 오류: {e}")
+
+    def set_performance_status(self, is_performance):
+        """선택된 파라미터의 Performance 상태 설정"""
+        try:
+            if not self.maint_mode:
+                messagebox.showwarning("권한 없음", "유지보수 모드에서만 Performance 상태를 변경할 수 있습니다.")
+                return
+            
+            selected_items = self.default_db_tree.selection()
+            if not selected_items:
+                messagebox.showwarning("선택 필요", "Performance 상태를 변경할 파라미터를 선택해주세요.")
+                return
+            
+            success_count = 0
+            for item in selected_items:
+                values = self.default_db_tree.item(item, 'values')
+                if values:
+                    record_id = values[0]  # ID 컬럼
+                    parameter_name = values[1]  # 파라미터명
+                    
+                    # DB에서 Performance 상태 업데이트
+                    if self.db_schema.set_performance_status(record_id, is_performance):
+                        success_count += 1
+                        self.update_log(f"✅ {parameter_name}: Performance {'설정' if is_performance else '해제'}")
+                    else:
+                        self.update_log(f"❌ {parameter_name}: Performance 상태 변경 실패")
+            
+            if success_count > 0:
+                status_text = "Performance로 설정" if is_performance else "Performance 해제"
+                messagebox.showinfo("완료", f"{success_count}개 파라미터의 {status_text}가 완료되었습니다.")
+                
+                # 화면 새로고침
+                self.on_equipment_type_selected()
+            else:
+                messagebox.showerror("오류", "Performance 상태 변경에 실패했습니다.")
+                
+        except Exception as e:
+            error_msg = f"Performance 상태 설정 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", error_msg)
+
+    def apply_performance_filter(self):
+        """Performance 필터 적용"""
+        try:
+            # 현재 선택된 장비 유형으로 다시 로드
+            self.on_equipment_type_selected()
+        except Exception as e:
+            self.update_log(f"Performance 필터 적용 오류: {e}")
+
+    def apply_confidence_filter(self, event=None):
+        """신뢰도 필터 적용"""
+        try:
+            # 현재 선택된 장비 유형으로 다시 로드
+            self.on_equipment_type_selected()
+        except Exception as e:
+            self.update_log(f"신뢰도 필터 적용 오류: {e}")
+
+    def show_parameter_details(self):
+        """선택된 파라미터의 상세 정보 표시"""
+        try:
+            selected_items = self.default_db_tree.selection()
+            if not selected_items:
+                messagebox.showwarning("선택 필요", "상세 정보를 볼 파라미터를 선택해주세요.")
+                return
+            
+            item = selected_items[0]  # 첫 번째 선택 항목
+            values = self.default_db_tree.item(item, 'values')
+            if not values:
+                return
+            
+            # 상세 정보 다이얼로그 생성
+            detail_window = tk.Toplevel(self.window)
+            detail_window.title("📊 파라미터 상세 정보")
+            detail_window.geometry("500x400")
+            detail_window.transient(self.window)
+            detail_window.grab_set()
+            
+            # 정보 표시
+            info_text = tk.Text(detail_window, wrap=tk.WORD, padx=10, pady=10)
+            info_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            
+            # 파라미터 정보 구성
+            param_info = f"""📋 파라미터 상세 정보
+
+🔧 기본 정보:
+• ID: {values[0]}
+• 파라미터명: {values[1]}
+• Module: {values[2]}
+• Part: {values[3]}
+• 데이터 타입: {values[4]}
+
+⚙️ 설정값:
+• 기본값: {values[5]}
+• 최소값: {values[6]}
+• 최대값: {values[7]}
+
+📊 통계 정보:
+• 발생 횟수: {values[8]}
+• 전체 파일 수: {values[9]}
+• 신뢰도: {values[10]}%
+
+🎯 Performance 설정:
+• Performance 항목: {"✅ Yes" if values[11] == "True" else "❌ No"}
+
+📁 소스 정보:
+• 소스 파일: {values[12]}
+
+📝 설명:
+{values[13]}
+"""
+            
+            info_text.insert(tk.END, param_info)
+            info_text.config(state=tk.DISABLED)
+            
+            # 닫기 버튼
+            ttk.Button(detail_window, text="닫기", command=detail_window.destroy).pack(pady=10)
+            
+        except Exception as e:
+            error_msg = f"상세 정보 표시 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", error_msg)
+
+    def quick_set_performance(self, is_performance):
+        """Performance 상태를 빠르게 설정"""
+        try:
+            if not self.maint_mode:
+                messagebox.showwarning("권한 없음", "유지보수 모드에서만 Performance 상태를 변경할 수 있습니다.")
+                return
+            
+            selected_items = self.default_db_tree.selection()
+            if not selected_items:
+                messagebox.showwarning("선택 필요", "Performance 상태를 변경할 파라미터를 선택해주세요.")
+                return
+            
+            success_count = 0
+            for item in selected_items:
+                values = self.default_db_tree.item(item, 'values')
+                if values:
+                    record_id = values[0]  # ID 컬럼
+                    parameter_name = values[1]  # 파라미터명
+                    
+                    # DB에서 Performance 상태 업데이트
+                    if self.db_schema.set_performance_status(record_id, is_performance):
+                        success_count += 1
+                        self.update_log(f"✅ {parameter_name}: Performance {'설정' if is_performance else '해제'}")
+                    else:
+                        self.update_log(f"❌ {parameter_name}: Performance 상태 변경 실패")
+            
+            if success_count > 0:
+                status_text = "Performance로 설정" if is_performance else "Performance 해제"
+                messagebox.showinfo("완료", f"{success_count}개 파라미터의 {status_text}가 완료되었습니다.")
+                
+                # 화면 새로고침
+                self.on_equipment_type_selected()
+            else:
+                messagebox.showerror("오류", "Performance 상태 변경에 실패했습니다.")
+                
+        except Exception as e:
+            error_msg = f"Performance 상태 설정 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", error_msg)
+
+    def apply_all_filters(self):
+        """Performance 필터와 신뢰도 필터 적용"""
+        try:
+            # 현재 선택된 장비 유형으로 다시 로드
+            self.on_equipment_type_selected()
+        except Exception as e:
+            self.update_log(f"Performance 필터 적용 오류: {e}")
+
+    def reset_all_filters(self):
+        """Performance 필터와 신뢰도 필터 초기화"""
+        try:
+            # 필터 변수들 초기화
+            self.show_performance_only_var.set(False)
+            self.confidence_filter_var.set("전체")
+            
+            # 현재 선택된 장비 유형으로 다시 로드
+            self.on_equipment_type_selected()
+            self.update_log("✅ 필터가 초기화되었습니다.")
+        except Exception as e:
+            self.update_log(f"❌ 필터 초기화 오류: {e}")

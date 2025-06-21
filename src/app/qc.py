@@ -158,6 +158,21 @@ def add_qc_check_functions_to_class(cls):
     DBManager 클래스에 QC 검수 기능을 추가합니다.
     """
     def create_qc_check_tab(self):
+        """QC 검수 탭 생성 - 향상된 기능 포함"""
+        # Enhanced QC 기능이 사용 가능한지 확인
+        try:
+            from app.enhanced_qc import add_enhanced_qc_functions_to_class
+            # Enhanced QC 기능을 클래스에 추가
+            add_enhanced_qc_functions_to_class(self.__class__)
+            # Enhanced QC 탭 생성
+            self.create_enhanced_qc_tab()
+            self.update_log("[QC] 향상된 QC 검수 탭이 생성되었습니다.")
+            return
+        except ImportError:
+            # Enhanced QC를 사용할 수 없는 경우 기본 QC 탭 생성
+            self.update_log("[QC] 기본 QC 검수 탭을 생성합니다.")
+        
+        # 기본 QC 탭 생성
         qc_tab = ttk.Frame(self.main_notebook)
         self.main_notebook.add(qc_tab, text="QC 검수")
 
@@ -179,7 +194,7 @@ def add_qc_check_functions_to_class(cls):
         self.qc_type_combobox = ttk.Combobox(top_line, textvariable=self.qc_type_var, state="readonly", width=20)
         self.qc_type_combobox.pack(side=tk.LEFT, padx=(0, 10))
         
-        # 🆕 새로고침 버튼 추가
+        # 새로고침 버튼 추가
         refresh_btn = ttk.Button(top_line, text="🔄 목록 새로고침", command=self.refresh_qc_equipment_types)
         refresh_btn.pack(side=tk.LEFT, padx=(5, 10))
 
@@ -187,7 +202,7 @@ def add_qc_check_functions_to_class(cls):
         bottom_line = ttk.Frame(type_frame)
         bottom_line.pack(fill=tk.X, pady=(5, 0))
 
-        # 🆕 검수 모드 선택
+        # 검수 모드 선택
         ttk.Label(bottom_line, text="검수 모드:").pack(side=tk.LEFT, padx=(0, 5))
         self.qc_mode_var = tk.StringVar(value="performance")
         
@@ -207,7 +222,7 @@ def add_qc_check_functions_to_class(cls):
         qc_btn = ttk.Button(action_frame, text="QC 검수 실행", command=self.perform_qc_check)
         qc_btn.pack(pady=(0, 5))
 
-        # 🆕 파일 선택 버튼 (업로드된 파일 선택)
+        # 파일 선택 버튼 (업로드된 파일 선택)
         file_select_btn = ttk.Button(action_frame, text="검수 파일 선택", command=self.select_qc_files)
         file_select_btn.pack()
 
@@ -247,62 +262,51 @@ def add_qc_check_functions_to_class(cls):
         self.load_equipment_types_for_qc()
 
     def refresh_qc_equipment_types(self):
-        """QC 탭의 장비 유형 목록 수동 새로고침"""
+        """QC용 장비 유형 목록 새로고침"""
         try:
-            self.update_log("🔄 QC 탭 장비 유형 목록 수동 새로고침 시작...")
-            
-            # 현재 선택된 장비 유형 저장
-            current_selection = self.qc_type_var.get()
-            
-            # 장비 유형 목록 다시 로드
             self.load_equipment_types_for_qc()
-            
-            # 이전 선택이 여전히 존재하면 복원
-            if current_selection and current_selection in self.qc_type_combobox['values']:
-                self.qc_type_combobox.set(current_selection)
-                self.update_log(f"✅ QC 탭 새로고침 완료 - 이전 선택 '{current_selection}' 복원")
-            else:
-                self.update_log("✅ QC 탭 새로고침 완료 - 새 목록으로 업데이트")
-            
-            # 성공 메시지
-            messagebox.showinfo("새로고침 완료", "QC 탭의 장비 유형 목록이 최신 상태로 업데이트되었습니다.")
-            
+            self.update_log("[QC] 장비 유형 목록이 새로고침되었습니다.")
         except Exception as e:
-            error_msg = f"QC 탭 새로고침 오류: {str(e)}"
-            self.update_log(f"❌ {error_msg}")
-            messagebox.showerror("새로고침 오류", error_msg)
+            messagebox.showerror("오류", f"장비 유형 목록 새로고침 중 오류 발생: {str(e)}")
+            self.update_log(f"❌ QC 장비 유형 새로고침 오류: {str(e)}")
 
     def load_equipment_types_for_qc(self):
-        """QC 검수를 위한 장비 유형 목록 로드"""
-        conn = None
+        """QC용 장비 유형 목록 로드"""
         try:
-            conn = self.get_db_connection()
-            cursor = conn.cursor()
-
-            # 장비 유형 정보 조회 (실제 테이블명에 맞게 수정)
-            cursor.execute("SELECT id, type_name FROM Equipment_Types ORDER BY type_name")
-            equipment_types = cursor.fetchall()
-
-            # 콤보박스 업데이트
-            if equipment_types:
-                self.equipment_types_for_qc = {name: id for id, name in equipment_types}
-                self.qc_type_combobox['values'] = list(self.equipment_types_for_qc.keys())
-                self.qc_type_combobox.current(0)  # 첫 번째 항목 선택
+            if hasattr(self, 'db_schema') and self.db_schema:
+                equipment_types = self.db_schema.get_equipment_types()
             else:
-                self.equipment_types_for_qc = {}
-                self.qc_type_combobox['values'] = []
-                messagebox.showinfo("알림", "등록된 장비 유형이 없습니다.")
-
+                from app.schema import DBSchema
+                db_schema = DBSchema()
+                equipment_types = db_schema.get_equipment_types()
+            
+            # 장비 유형 딕셔너리 생성 (이름 -> ID 매핑)
+            self.equipment_types_for_qc = {}
+            equipment_names = []
+            
+            for eq_type in equipment_types:
+                type_id, type_name = eq_type[0], eq_type[1]
+                self.equipment_types_for_qc[type_name] = type_id
+                equipment_names.append(type_name)
+            
+            # 콤보박스 업데이트
+            if hasattr(self, 'qc_type_combobox'):
+                self.qc_type_combobox['values'] = equipment_names
+                if equipment_names:
+                    self.qc_type_combobox.set(equipment_names[0])
+            
+            self.update_log(f"[QC] {len(equipment_names)}개의 장비 유형이 로드되었습니다.")
+            
         except Exception as e:
-            messagebox.showerror("오류", f"장비 유형 로드 중 오류 발생: {str(e)}")
-        finally:
-            if conn:
-                conn.close()
+            error_msg = f"QC용 장비 유형 로드 중 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            if hasattr(self, 'qc_type_combobox'):
+                self.qc_type_combobox['values'] = []
 
     def perform_qc_check(self):
         """QC 검수 실행"""
         selected_type = self.qc_type_var.get()
-        qc_mode = self.qc_mode_var.get()  # 🆕 검수 모드 확인
+        qc_mode = self.qc_mode_var.get()  # 검수 모드 확인
 
         if not selected_type:
             messagebox.showinfo("알림", "장비 유형을 선택해주세요.")
@@ -326,15 +330,16 @@ def add_qc_check_functions_to_class(cls):
             # 선택된 장비 유형의 데이터 로드
             equipment_type_id = self.equipment_types_for_qc[selected_type]
             
-            # 🆕 Performance 모드에 따른 데이터 필터링
+            # Performance 모드에 따른 데이터 필터링
             performance_only = (qc_mode == "performance")
             
             # DB 스키마 인스턴스를 통해 데이터 로드
-            from app.schema import DBSchema
-            db_schema = DBSchema()
-            
-            # Performance 모드 또는 전체 모드에 따라 데이터 로드
-            data = db_schema.get_default_values(equipment_type_id, performance_only=performance_only)
+            if hasattr(self, 'db_schema') and self.db_schema:
+                data = self.db_schema.get_default_values(equipment_type_id, performance_only=performance_only)
+            else:
+                from app.schema import DBSchema
+                db_schema = DBSchema()
+                data = db_schema.get_default_values(equipment_type_id, performance_only=performance_only)
 
             if not data:
                 loading_dialog.close()
@@ -343,9 +348,6 @@ def add_qc_check_functions_to_class(cls):
                 return
 
             # 데이터프레임 생성 (실제 데이터 구조에 맞게 수정)
-            # data structure: (id, parameter_name, default_value, min_spec, max_spec, type_name,
-            #                  occurrence_count, total_files, confidence_score, source_files, description,
-            #                  module_name, part_name, item_type, is_performance)
             df = pd.DataFrame(data, columns=[
                 "id", "parameter_name", "default_value", "min_spec", "max_spec", "type_name",
                 "occurrence_count", "total_files", "confidence_score", "source_files", "description",
@@ -372,18 +374,15 @@ def add_qc_check_functions_to_class(cls):
             loading_dialog.update_progress(100, "완료")
             loading_dialog.close()
 
-            # 🆕 검수 모드 정보 포함하여 로그 업데이트
+            # 검수 모드 정보 포함하여 로그 업데이트
             mode_text = "Performance 항목" if performance_only else "전체 항목"
             self.update_log(f"[QC 검수] 장비 유형 '{selected_type}' ({mode_text})에 대한 QC 검수가 완료되었습니다. 총 {len(results)}개의 이슈 발견.")
 
         except Exception as e:
             if 'loading_dialog' in locals():
                 loading_dialog.close()
-            error_msg = f"QC 검수 중 오류 발생: {str(e)}"
-            messagebox.showerror("오류", error_msg)
-            self.update_log(f"❌ {error_msg}")
-            import traceback
-            traceback.print_exc()
+            messagebox.showerror("오류", f"QC 검수 중 오류 발생: {str(e)}")
+            self.update_log(f"❌ QC 검수 오류: {str(e)}")
 
     def show_qc_statistics(self, results):
         """QC 검수 결과 통계 표시"""
@@ -503,25 +502,52 @@ def add_qc_check_functions_to_class(cls):
         try:
             # 업로드된 파일 목록 확인
             if not hasattr(self, 'uploaded_files') or not self.uploaded_files:
-                messagebox.showinfo("알림", "먼저 '파일 > 폴더 열기'를 통해 파일을 업로드해주세요.")
+                messagebox.showinfo(
+                    "파일 선택 안내", 
+                    "QC 검수를 위해서는 먼저 파일을 로드해야 합니다.\n\n"
+                    "📁 파일 > 폴더 열기를 통해 DB 파일들을 업로드해주세요.\n"
+                    "지원 형식: .txt, .csv, .db 파일"
+                )
                 return
             
             # 파일 선택 대화상자 생성
             file_selection_window = tk.Toplevel(self.window)
-            file_selection_window.title("QC 검수 파일 선택")
-            file_selection_window.geometry("500x400")
+            file_selection_window.title("🔍 QC 검수 파일 선택")
+            file_selection_window.geometry("600x500")
             file_selection_window.transient(self.window)
             file_selection_window.grab_set()
+            file_selection_window.resizable(True, True)
             
-            # 설명 레이블
-            ttk.Label(file_selection_window, text="QC 검수를 수행할 파일을 선택하세요 (최대 6개):").pack(pady=10)
+            # 메인 프레임
+            main_frame = ttk.Frame(file_selection_window)
+            main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
             
-            # 파일 목록 프레임
-            files_frame = ttk.Frame(file_selection_window)
-            files_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+            # 상단 정보 프레임
+            info_frame = ttk.Frame(main_frame)
+            info_frame.pack(fill=tk.X, pady=(0, 10))
             
-            # 스크롤바가 있는 체크박스 리스트
-            canvas = tk.Canvas(files_frame)
+            # 제목 및 설명
+            title_label = ttk.Label(
+                info_frame, 
+                text="QC 검수 파일 선택", 
+                font=('Arial', 12, 'bold')
+            )
+            title_label.pack(anchor='w')
+            
+            desc_label = ttk.Label(
+                info_frame, 
+                text=f"업로드된 {len(self.uploaded_files)}개 파일 중에서 QC 검수를 수행할 파일을 선택하세요 (최대 6개)",
+                font=('Arial', 9),
+                foreground='gray'
+            )
+            desc_label.pack(anchor='w', pady=(2, 0))
+            
+            # 파일 목록 프레임 (스크롤 가능)
+            files_frame = ttk.LabelFrame(main_frame, text="📄 파일 목록", padding=10)
+            files_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+            
+            # 스크롤바가 있는 캔버스
+            canvas = tk.Canvas(files_frame, bg='white')
             scrollbar = ttk.Scrollbar(files_frame, orient="vertical", command=canvas.yview)
             scrollable_frame = ttk.Frame(canvas)
             
@@ -541,19 +567,79 @@ def add_qc_check_functions_to_class(cls):
                 var = tk.BooleanVar()
                 self.qc_file_vars[filename] = var
                 
+                # 파일 정보 프레임
+                file_frame = ttk.Frame(scrollable_frame)
+                file_frame.pack(fill=tk.X, pady=2, padx=5)
+                
+                # 체크박스
                 checkbox = ttk.Checkbutton(
-                    scrollable_frame, 
-                    text=f"{filename}", 
+                    file_frame, 
+                    text="", 
                     variable=var
                 )
-                checkbox.pack(anchor="w", padx=10, pady=2)
+                checkbox.pack(side=tk.LEFT, padx=(0, 10))
+                
+                # 파일 정보 레이블
+                file_info_frame = ttk.Frame(file_frame)
+                file_info_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+                
+                # 파일명 (굵게)
+                filename_label = ttk.Label(
+                    file_info_frame, 
+                    text=filename,
+                    font=('Arial', 9, 'bold')
+                )
+                filename_label.pack(anchor='w')
+                
+                # 파일 경로 (작게)
+                try:
+                    import os
+                    file_size = os.path.getsize(filepath)
+                    file_size_str = f"{file_size:,} bytes"
+                    
+                    path_label = ttk.Label(
+                        file_info_frame,
+                        text=f"📁 {filepath} ({file_size_str})",
+                        font=('Arial', 8),
+                        foreground='gray'
+                    )
+                    path_label.pack(anchor='w')
+                except:
+                    path_label = ttk.Label(
+                        file_info_frame,
+                        text=f"📁 {filepath}",
+                        font=('Arial', 8),
+                        foreground='gray'
+                    )
+                    path_label.pack(anchor='w')
             
             canvas.pack(side="left", fill="both", expand=True)
             scrollbar.pack(side="right", fill="y")
             
-            # 버튼 프레임
-            button_frame = ttk.Frame(file_selection_window)
-            button_frame.pack(fill=tk.X, padx=10, pady=10)
+            # 하단 버튼 프레임
+            button_frame = ttk.Frame(main_frame)
+            button_frame.pack(fill=tk.X, pady=(0, 0))
+            
+            # 선택 통계 라벨
+            selection_stats_label = ttk.Label(
+                button_frame, 
+                text="선택된 파일: 0개",
+                font=('Arial', 9),
+                foreground='blue'
+            )
+            selection_stats_label.pack(side=tk.LEFT)
+            
+            def update_selection_stats():
+                """선택 통계 업데이트"""
+                selected_count = sum(1 for var in self.qc_file_vars.values() if var.get())
+                selection_stats_label.config(
+                    text=f"선택된 파일: {selected_count}개",
+                    foreground='blue' if selected_count <= 6 else 'red'
+                )
+            
+            # 체크박스 변경 시 통계 업데이트
+            for var in self.qc_file_vars.values():
+                var.trace('w', lambda *args: update_selection_stats())
             
             def apply_selection():
                 selected_files = []
@@ -562,37 +648,68 @@ def add_qc_check_functions_to_class(cls):
                         selected_files.append(filename)
                 
                 if not selected_files:
-                    messagebox.showwarning("경고", "최소 1개의 파일을 선택해주세요.")
+                    messagebox.showwarning("선택 필요", "최소 1개의 파일을 선택해주세요.")
                     return
                 
                 if len(selected_files) > 6:
-                    messagebox.showwarning("경고", "최대 6개의 파일만 선택할 수 있습니다.")
+                    messagebox.showwarning(
+                        "선택 제한", 
+                        f"최대 6개의 파일만 선택할 수 있습니다.\n현재 선택: {len(selected_files)}개"
+                    )
                     return
                 
                 # 선택된 파일 정보 저장
                 self.selected_qc_files = {name: self.uploaded_files[name] for name in selected_files}
                 
-                messagebox.showinfo("선택 완료", f"{len(selected_files)}개의 파일이 QC 검수용으로 선택되었습니다.")
+                # 성공 메시지와 함께 선택된 파일 목록 표시
+                file_list = '\n'.join([f"• {name}" for name in selected_files])
+                messagebox.showinfo(
+                    "파일 선택 완료", 
+                    f"QC 검수용으로 {len(selected_files)}개 파일이 선택되었습니다.\n\n"
+                    f"선택된 파일:\n{file_list}\n\n"
+                    f"이제 'QC 검수 실행' 버튼을 클릭하여 검수를 시작하세요."
+                )
+                
                 file_selection_window.destroy()
             
             def select_all():
                 for var in self.qc_file_vars.values():
                     var.set(True)
+                update_selection_stats()
             
             def deselect_all():
                 for var in self.qc_file_vars.values():
                     var.set(False)
+                update_selection_stats()
+            
+            def select_first_n(n):
+                """처음 n개 파일 선택"""
+                deselect_all()
+                for i, var in enumerate(self.qc_file_vars.values()):
+                    if i < n:
+                        var.set(True)
+                    else:
+                        break
+                update_selection_stats()
             
             # 버튼들
-            ttk.Button(button_frame, text="전체 선택", command=select_all).pack(side=tk.LEFT, padx=5)
-            ttk.Button(button_frame, text="전체 해제", command=deselect_all).pack(side=tk.LEFT, padx=5)
-            ttk.Button(button_frame, text="취소", command=file_selection_window.destroy).pack(side=tk.RIGHT, padx=5)
-            ttk.Button(button_frame, text="선택 완료", command=apply_selection).pack(side=tk.RIGHT, padx=5)
+            button_control_frame = ttk.Frame(button_frame)
+            button_control_frame.pack(side=tk.RIGHT)
+            
+            ttk.Button(button_control_frame, text="처음 3개", command=lambda: select_first_n(3)).pack(side=tk.LEFT, padx=2)
+            ttk.Button(button_control_frame, text="전체 선택", command=select_all).pack(side=tk.LEFT, padx=2)
+            ttk.Button(button_control_frame, text="전체 해제", command=deselect_all).pack(side=tk.LEFT, padx=2)
+            ttk.Button(button_control_frame, text="취소", command=file_selection_window.destroy).pack(side=tk.LEFT, padx=2)
+            ttk.Button(button_control_frame, text="✅ 선택 완료", command=apply_selection).pack(side=tk.LEFT, padx=2)
+            
+            # 초기 통계 업데이트
+            update_selection_stats()
             
         except Exception as e:
             error_msg = f"파일 선택 중 오류 발생: {str(e)}"
             messagebox.showerror("오류", error_msg)
-            self.update_log(f"❌ {error_msg}")
+            if hasattr(self, 'update_log'):
+                self.update_log(f"❌ {error_msg}")
 
     def perform_qc_check_enhanced(self):
         """개선된 QC 검수 실행 (Performance 모드 지원)"""

@@ -389,14 +389,25 @@ class MainController(BaseController):
         label.pack(expand=True)
     
     def _create_default_db_tab(self):
-        """Default DB 탭 생성 (기존 방식 유지)"""
-        # 임시로 기본 프레임만 생성
-        db_frame = ttk.Frame(self.main_notebook)
-        self.main_notebook.add(db_frame, text="Default DB 관리")
-        
-        # 추후 별도 DB 컨트롤러로 분리 예정
-        label = ttk.Label(db_frame, text="Default DB 관리 기능 (개발 중)")
-        label.pack(expand=True)
+        """Default DB 탭 생성 - 실제 DefaultDBTabController 사용"""
+        try:
+            from .tab_controllers.default_db_tab_controller import DefaultDBTabController
+            
+            # Default DB 탭 프레임 생성
+            db_frame = ttk.Frame(self.main_notebook)
+            self.main_notebook.add(db_frame, text="Default DB 관리")
+            
+            # DefaultDBTabController 생성 및 등록
+            default_db_controller = DefaultDBTabController(db_frame, self.viewmodel)
+            self.tab_controllers['default_db'] = default_db_controller
+            
+            print("✅ Default DB 관리 탭이 완전히 생성되었습니다.")
+            
+        except Exception as e:
+            print(f"❌ Default DB 탭 생성 오류: {e}")
+            # 실패 시 기본 레이블 표시
+            label = ttk.Label(db_frame, text=f"Default DB 관리 기능 로드 실패: {str(e)}")
+            label.pack(expand=True)
     
     def _create_change_history_tab(self):
         """변경 이력 탭 생성 (기존 방식 유지)"""
