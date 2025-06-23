@@ -1823,16 +1823,16 @@ class DBManager:
             tree_frame = ttk.Frame(self.default_db_frame)
             tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
             
-            # 트리뷰 생성
-            columns = ("id", "parameter_name", "default_value", "min_spec", "max_spec", 
+            # 트리뷰 생성 (순차 번호 컬럼으로 변경)
+            columns = ("no", "parameter_name", "default_value", "min_spec", "max_spec", 
                       "occurrence_count", "total_files", "confidence_score", "source_files", "description")
-            
+
             self.default_db_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
             self.update_log("✅ Default DB 트리뷰 생성 완료")
-            
+
             # 컬럼 헤더 설정
             headers = {
-                "id": "ID",
+                "no": "No.",  # 순차 번호 컬럼
                 "parameter_name": "파라미터명",
                 "default_value": "설정값",  # 🔄 "기본값" → "설정값"으로 변경
                 "min_spec": "최소값",
@@ -1843,10 +1843,10 @@ class DBManager:
                 "source_files": "소스파일",
                 "description": "설명"  # 🆕 description 컬럼 추가
             }
-            
+
             column_widths = {
-                "id": 50,
-                "parameter_name": 200,
+                "no": 50,  # 순차 번호 컬럼 너비
+                "parameter_name": 220,
                 "default_value": 100,
                 "min_spec": 80,
                 "max_spec": 80,
@@ -2863,3 +2863,88 @@ class DBManager:
         if not hasattr(self, 'qc_type_var') or not hasattr(self, 'equipment_types_for_qc'):
             self.update_log("❌ QC 검수 기능이 초기화되지 않았습니다")
             return
+        
+        selected_type = self.qc_type_var.get()
+        if not selected_type:
+            messagebox.showwarning("경고", "장비 유형을 선택해주세요.")
+            return
+        
+        if self.merged_df is None:
+            messagebox.showwarning("경고", "비교할 파일을 먼저 로드해주세요.")
+            return
+        
+        try:
+            self.update_log(f"🔍 QC 검수 시작: {selected_type}")
+            
+            # QC 결과 초기화
+            for item in self.qc_result_tree.get_children():
+                self.qc_result_tree.delete(item)
+            
+            # 기본 QC 검수 수행
+            issues_found = 0
+            
+            # 선택된 장비 유형 ID 가져오기
+            type_id = self.equipment_types_for_qc.get(selected_type)
+            if not type_id:
+                messagebox.showerror("오류", "선택된 장비 유형의 정보를 찾을 수 없습니다.")
+                return
+            
+            # Default DB에서 기준값 가져오기
+            default_values = self.db_schema.get_default_values(type_id)
+            
+            # 각 파라미터별로 검수 수행
+            grouped = self.merged_df.groupby(["Module", "Part", "ItemName"])
+            
+            for (module, part, item_name), group in grouped:
+                param_name = f"{part}_{item_name}"
+                
+                # Default DB에서 해당 파라미터 찾기
+                default_info = None
+                for default_record in default_values:
+                    if len(default_record) >= 6 and default_record[1] == param_name:
+                        default_info = default_record
+                        break
+                
+                # 값 일관성 검사
+                file_values = []
+                for model in self.file_names:
+                    model_data = group[group["Model"] == model]
+                    if not model_data.empty:
+                        value = str(model_data["ItemValue"].iloc[0])
+                        file_values.append(value)
+                
+                # 값이 다른 경우 이슈로 등록
+                unique_values = set(v for v in file_values if v != "-")
+                if len(unique_values) > 1:
+                    issue_desc = f"파일 간 값 불일치: {', '.join(unique_values)}"
+                    self.qc_result_tree.insert("", "end", values=[
+                        param_name, "값 불일치", issue_desc, "중간"
+                    ])
+                    issues_found += 1
+                
+                # Default DB와 비교 (있는 경우)
+                if default_info and len(file_values) > 0:
+                    default_value = str(default_info[2])  # default_value 컬럼
+                    current_value = file_values[0]  # 첫 번째 파일 값
+                    
+                    if current_value != "-" and current_value != default_value:
+                        issue_desc = f"기준값({default_value})과 다름: {current_value}"
+                        self.qc_result_tree.insert("", "end", values=[
+                            param_name, "기준값 불일치", issue_desc, "높음"
+                        ])
+                        issues_found += 1
+            
+            # 검수 완료 메시지
+            if issues_found == 0:
+                messagebox.showinfo("QC 검수 완료", "문제가 발견되지 않았습니다.")
+                self.update_log("✅ QC 검수 완료 - 문제 없음")
+            else:
+                messagebox.showinfo("QC 검수 완료", f"{issues_found}개의 문제가 발견되었습니다.")
+                self.update_log(f"⚠️ QC 검수 완료 - {issues_found}개 문제 발견")
+            
+        except Exception as e:
+            error_msg = f"QC 검수 중 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", error_msg)
+            import traceback
+            traceback.print_exc()

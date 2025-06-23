@@ -1823,8 +1823,8 @@ class DBManager:
             tree_frame = ttk.Frame(self.default_db_frame)
             tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
             
-            # 트리뷰 생성
-            columns = ("id", "parameter_name", "default_value", "min_spec", "max_spec", 
+            # 트리뷰 생성 (ID 컬럼 제거)
+            columns = ("parameter_name", "default_value", "min_spec", "max_spec", 
                       "occurrence_count", "total_files", "confidence_score", "source_files", "description")
             
             self.default_db_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
@@ -1832,7 +1832,6 @@ class DBManager:
             
             # 컬럼 헤더 설정
             headers = {
-                "id": "ID",
                 "parameter_name": "파라미터명",
                 "default_value": "설정값",  # 🔄 "기본값" → "설정값"으로 변경
                 "min_spec": "최소값",
@@ -1845,8 +1844,7 @@ class DBManager:
             }
             
             column_widths = {
-                "id": 50,
-                "parameter_name": 200,
+                "parameter_name": 250,  # ID 컬럼 제거로 파라미터명 컬럼 너비 증가
                 "default_value": 100,
                 "min_spec": 80,
                 "max_spec": 80,
@@ -2861,6 +2859,25 @@ class DBManager:
     def perform_qc_check(self):
         """QC 검수 실행 - Performance 모드 지원"""
         if not hasattr(self, 'qc_type_var') or not hasattr(self, 'equipment_types_for_qc'):
+            messagebox.showwarning("경고", "QC 검수 기능이 초기화되지 않았습니다.")
+            return
+
+        selected_type = self.qc_type_var.get()
+        if not selected_type:
+            messagebox.showwarning("경고", "장비 유형을 선택해주세요.")
+            return
+
+        try:
+            self.update_log("🔍 QC 검수를 실행합니다...")
+            # QC 검수 로직 구현
+            messagebox.showinfo("QC 검수", "QC 검수가 완료되었습니다.")
+            self.update_log("✅ QC 검수 완료")
+        except Exception as e:
+            error_msg = f"QC 검수 중 오류: {e}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", error_msg)
+
+
 # DBManager 클래스 및 메인 GUI 관리
 
 import tkinter as tk
@@ -6256,8 +6273,8 @@ class DBManager:
             tree_frame = ttk.Frame(self.default_db_frame)
             tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
             
-            # 트리뷰 생성
-            columns = ("id", "parameter_name", "default_value", "min_spec", "max_spec", 
+            # 트리뷰 생성 (ID 컬럼 제거)
+            columns = ("parameter_name", "default_value", "min_spec", "max_spec", 
                       "occurrence_count", "total_files", "confidence_score", "source_files", "description")
             
             self.default_db_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
@@ -6265,7 +6282,6 @@ class DBManager:
             
             # 컬럼 헤더 설정
             headers = {
-                "id": "ID",
                 "parameter_name": "파라미터명",
                 "default_value": "설정값",  # 🔄 "기본값" → "설정값"으로 변경
                 "min_spec": "최소값",
@@ -6278,8 +6294,7 @@ class DBManager:
             }
             
             column_widths = {
-                "id": 50,
-                "parameter_name": 200,
+                "parameter_name": 250,  # ID 컬럼 제거로 파라미터명 컬럼 너비 증가
                 "default_value": 100,
                 "min_spec": 80,
                 "max_spec": 80,

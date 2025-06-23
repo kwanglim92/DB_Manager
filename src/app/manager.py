@@ -2060,16 +2060,16 @@ class DBManager:
             tree_frame = ttk.Frame(tree_container)
             tree_frame.pack(fill=tk.BOTH, expand=True)
             
-            # 트리뷰 컬럼 정의
-            columns = ("id", "parameter_name", "module", "part", "item_type", "default_value", "min_spec", "max_spec", 
+            # 트리뷰 컬럼 정의 (순차 번호 컬럼으로 변경)
+            columns = ("no", "parameter_name", "module", "part", "item_type", "default_value", "min_spec", "max_spec", 
                       "is_performance", "description")
-            
+
             self.default_db_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=20)
             self.update_log("✅ Default DB 트리뷰 생성 완료")
-            
+
             # 컬럼 헤더 설정
             headers = {
-                "id": "ID",
+                "no": "No.",  # 순차 번호 컬럼
                 "parameter_name": "ItemName",
                 "module": "Module",
                 "part": "Part", 
@@ -2080,10 +2080,10 @@ class DBManager:
                 "is_performance": "Performance",
                 "description": "Description"
             }
-            
+
             # 컬럼 너비 최적화
             column_widths = {
-                "id": 50,
+                "no": 50,  # 순차 번호 컬럼 너비
                 "parameter_name": 220,
                 "module": 80,
                 "part": 100,
@@ -2327,100 +2327,74 @@ class DBManager:
             traceback.print_exc()
 
     def update_default_db_display(self, default_values=None):
-        """Default DB 파라미터 목록을 업데이트합니다."""
-        try:
-            self.update_log(f"🔄 Default DB 화면 업데이트 시작... (항목 수: {len(default_values) if default_values else 0})")
+        """Default DB 트리뷰 표시 업데이트 - 순차 번호 포함"""
+        if not hasattr(self, 'default_db_tree'):
+            return
             
-            # 기존 항목들 제거
-            for item in self.default_db_tree.get_children():
-                self.default_db_tree.delete(item)
-            
-            if default_values is None:
-                self.update_log("⚠️ default_values가 None - 빈 화면 표시")
-                return
-                
-            # 새 항목들 추가
-            added_count = 0
-            for record in default_values:
-                # record 구조: (id, parameter_name, default_value, min_spec, max_spec, type_name, 
-                #                occurrence_count, total_files, confidence_score, source_files, description)
-                
-                record_id = record[0]
-                parameter_name = record[1]
-                # ItemName 표시 시 "Cantilever_" 부분 제거하여 시인성 향상
-                display_name = parameter_name
-                if display_name.startswith("Cantilever_"):
-                    display_name = display_name[11:]  # "Cantilever_" 제거
-                
-                default_value = record[2] if record[2] is not None else ""
-                min_spec = record[3] if record[3] else ""
-                max_spec = record[4] if record[4] else ""
-                
-                # 스키마 반환 순서에 맞게 처리: 
-                # (id, parameter_name, default_value, min_spec, max_spec, type_name,
-                #  occurrence_count, total_files, confidence_score, source_files, description,
-                #  module_name, part_name, item_type, is_performance)
-                try:
-                    occurrence_count = record[6] if len(record) > 6 else 1
-                    total_files = record[7] if len(record) > 7 else 1
-                    confidence_score = record[8] if len(record) > 8 else 1.0
-                    source_files = record[9] if len(record) > 9 else ""
-                    description = record[10] if len(record) > 10 and record[10] else f"This is a {parameter_name} Description"
-                    module_name = record[11] if len(record) > 11 and record[11] else "DSP"
-                    part_name = record[12] if len(record) > 12 and record[12] else "Unknown"
-                    item_type = record[13] if len(record) > 13 and record[13] else "double"
-                    is_performance = record[14] if len(record) > 14 else False
-                except IndexError:
-                    occurrence_count = 1
-                    total_files = 1
-                    confidence_score = 1.0
-                    source_files = ""
-                    description = f"This is a {parameter_name} Description"
-                    module_name = "DSP"
-                    part_name = "Unknown"
-                    item_type = "double"
-                    is_performance = False
-                
-                # 🆕 필터링 적용
-                # Performance 필터
-                if hasattr(self, 'show_performance_only_var') and self.show_performance_only_var.get():
-                    if not is_performance:
-                        continue  # Performance가 아닌 항목은 건너뛰기
-                
-                # Performance 상태 표시
-                performance_display = "Yes" if is_performance else "No"
-                
-                values = (record_id, display_name, module_name, part_name, item_type, default_value, min_spec, max_spec,
-                         performance_display, description)
-                
-                self.default_db_tree.insert("", "end", values=values)
-                added_count += 1
-            
-            # 상태 업데이트
-            count = len(default_values)
-            selected_type = self.equipment_type_var.get().split(" (ID:")[0] if self.equipment_type_var.get() else "선택없음"
-            
-            # Performance 통계 계산 (is_performance는 14번째 인덱스)
-            performance_count = sum(1 for record in default_values if len(record) > 14 and record[14])
-            performance_ratio = (performance_count / count * 100) if count > 0 else 0
-            
-            status_text = f"장비유형: {selected_type} | 파라미터: {count}개 | 표시: {added_count}개"
-            performance_text = f"🎯 Performance: {performance_count}개 ({performance_ratio:.1f}%)"
-            
-            self.default_db_status_label.config(text=status_text)
-            if hasattr(self, 'performance_stats_label'):
-                self.performance_stats_label.config(text=performance_text)
-            
-            self.update_log(f"✅ 트리뷰에 {added_count}개 항목 추가 완료")
-            self.update_log(f"📊 상태표시줄 업데이트: {status_text}")
-            self.update_log(f"🎯 Performance 통계: {performance_text}")
-            
-        except Exception as e:
-            error_msg = f"Default DB 화면 업데이트 오류: {e}"
-            self.update_log(f"❌ {error_msg}")
-            print(f"DEBUG - update_default_db_display error: {e}")
-            import traceback
-            traceback.print_exc()
+        # 기존 항목 삭제
+        for item in self.default_db_tree.get_children():
+            self.default_db_tree.delete(item)
+        
+        if default_values is None:
+            self.default_db_status_label.config(text="No parameters found for this equipment type.")
+            return
+        
+        # Performance 필터 적용
+        if hasattr(self, 'show_performance_only_var') and self.show_performance_only_var.get():
+            default_values = [item for item in default_values if len(item) > 11 and item[11] == 1]
+        
+        # 순차 번호와 함께 데이터 표시
+        for idx, item in enumerate(default_values, 1):
+            try:
+                if len(item) >= 12:
+                    record_id, param_name, default_value, min_spec, max_spec, occurrence_count, total_files, source_files, description, module_name, part_name, item_type, is_performance = item[:13]
+                    
+                    # Performance 표시
+                    performance_display = "Yes" if is_performance == 1 else "No"
+                    
+                    # 순차 번호를 첫 번째 컬럼에 표시
+                    values = (
+                        str(idx),  # 순차 번호 (1, 2, 3...)
+                        param_name or "", 
+                        module_name or "", 
+                        part_name or "", 
+                        item_type or "double",
+                        str(default_value) if default_value is not None else "",
+                        str(min_spec) if min_spec is not None else "",
+                        str(max_spec) if max_spec is not None else "",
+                        performance_display,
+                        description or ""
+                    )
+                    
+                    # 실제 DB ID는 item의 tags로 저장 (내부 관리용)
+                    self.default_db_tree.insert("", "end", values=values, tags=(f"id_{record_id}",))
+                    
+                else:
+                    # 이전 버전 호환성
+                    record_id, param_name, default_value, min_spec, max_spec, occurrence_count = item[:6]
+                    values = (
+                        str(idx),  # 순차 번호
+                        param_name or "",
+                        "", "", "double",
+                        str(default_value) if default_value is not None else "",
+                        str(min_spec) if min_spec is not None else "",
+                        str(max_spec) if max_spec is not None else "",
+                        "No", ""
+                    )
+                    self.default_db_tree.insert("", "end", values=values, tags=(f"id_{record_id}",))
+                    
+            except Exception as e:
+                self.update_log(f"⚠️ 항목 표시 중 오류: {e}")
+                continue
+        
+        # 상태 업데이트
+        total_count = len(default_values)
+        performance_count = sum(1 for item in default_values if len(item) > 11 and item[11] == 1)
+        
+        self.default_db_status_label.config(text=f"총 {total_count}개 파라미터 로드됨")
+        self.performance_stats_label.config(text=f"🎯 Performance: {performance_count}개")
+        
+        self.update_log(f"✅ Default DB 표시 업데이트 완료: {total_count}개 항목 (Performance: {performance_count}개)")
 
     def add_equipment_type_dialog(self):
         """새 장비 유형 추가 다이얼로그"""
@@ -2693,10 +2667,16 @@ class DBManager:
         param_ids = []
         
         for item in selected_items:
-            values = self.default_db_tree.item(item, 'values')
-            if values:
-                param_ids.append(values[0])  # ID
-                param_names.append(values[1])  # 파라미터명
+            # 실제 DB ID를 tags에서 가져오기
+            db_id = self.get_db_id_from_item(item)
+            if db_id is not None:
+                param_ids.append(db_id)
+                
+                values = self.default_db_tree.item(item, 'values')
+                if values and len(values) > 1:
+                    param_names.append(values[1])  # 파라미터명
+                else:
+                    param_names.append(f"ID_{db_id}")
 
         if not param_ids:
             messagebox.showwarning("경고", "삭제할 파라미터 정보를 찾을 수 없습니다.")
@@ -2774,11 +2754,12 @@ class DBManager:
 
         # 첫 번째 선택된 항목만 편집
         selected_item = selected_items[0]
-        values = self.default_db_tree.item(selected_item, 'values')
-        if not values:
+        
+        # 실제 DB ID를 tags에서 가져오기
+        param_id = self.get_db_id_from_item(selected_item)
+        if param_id is None:
+            messagebox.showerror("오류", "파라미터 ID를 찾을 수 없습니다.")
             return
-
-        param_id = values[0]
         
         try:
             # 파라미터 정보 조회
@@ -3926,6 +3907,35 @@ class DBManager:
             self.on_equipment_type_selected()
         except Exception as e:
             self.update_log(f"Performance 필터 적용 오류: {e}")
+
+    def get_selected_db_ids(self):
+        """선택된 트리뷰 항목들의 실제 DB ID를 반환합니다."""
+        selected_items = self.default_db_tree.selection()
+        db_ids = []
+        
+        for item in selected_items:
+            tags = self.default_db_tree.item(item, "tags")
+            for tag in tags:
+                if tag.startswith("id_"):
+                    try:
+                        db_id = int(tag.split("_")[1])
+                        db_ids.append(db_id)
+                        break
+                    except (ValueError, IndexError):
+                        continue
+        
+        return db_ids
+    
+    def get_db_id_from_item(self, tree_item):
+        """특정 트리뷰 아이템의 실제 DB ID를 반환합니다."""
+        tags = self.default_db_tree.item(tree_item, "tags")
+        for tag in tags:
+            if tag.startswith("id_"):
+                try:
+                    return int(tag.split("_")[1])
+                except (ValueError, IndexError):
+                    continue
+        return None
 
 
 
