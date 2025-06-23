@@ -1450,6 +1450,1458 @@ class DBManager:
             
             param_name = item_name  # ItemName만 사용하여 통일
             
+# DBManager 클래스 및 메인 GUI 관리
+
+import tkinter as tk
+from tkinter import ttk, messagebox, simpledialog, filedialog
+import sys, os
+from datetime import datetime
+from app.schema import DBSchema
+from app.loading import LoadingDialog
+from app.qc import add_qc_check_functions_to_class
+from app.enhanced_qc import add_enhanced_qc_functions_to_class
+# from app.defaultdb import add_default_db_functions_to_class  # 🚫 Performance 기능 충돌로 비활성화
+from app.history import add_change_history_functions_to_class
+from app.utils import create_treeview_with_scrollbar, create_label_entry_pair, format_num_value
+
+# 🆕 새로운 설정 시스템 (선택적 사용)
+try:
+    from app.core.config import AppConfig
+    from app.utils.path_utils import PathManager
+    from app.utils.validation import ValidationUtils
+    USE_NEW_CONFIG = True
+except ImportError:
+    USE_NEW_CONFIG = False
+
+# 🆕 새로운 서비스 시스템 (점진적 전환)
+try:
+    from app.services import ServiceFactory, LegacyAdapter, SERVICES_AVAILABLE
+    import json
+    USE_NEW_SERVICES = True
+except ImportError:
+    USE_NEW_SERVICES = False
+    SERVICES_AVAILABLE = False
+
+class DBManager:
+    def __init__(self):
+        # 🆕 새로운 설정 시스템 사용 (기존 코드 유지)
+        if USE_NEW_CONFIG:
+            self.config = AppConfig()
+            self.path_manager = PathManager()
+            self.validator = ValidationUtils()
+        
+        self.maint_mode = False
+        self.selected_equipment_type_id = None
+        self.file_names = []
+        self.folder_path = ""
+        self.merged_df = None
+        self.context_menu = None
+        
+        # QC 엔지니어용 탭 프레임들을 저장할 변수들
+        self.qc_check_frame = None
+        self.default_db_frame = None  
+        self.change_history_frame = None
+        
+        try:
+            self.db_schema = DBSchema()
+        except Exception as e:
+            print(f"DB 스키마 초기화 실패: {str(e)}")
+            self.db_schema = None
+        
+        add_qc_check_functions_to_class(DBManager)
+        add_enhanced_qc_functions_to_class(DBManager)
+        # add_default_db_functions_to_class(DBManager)  # 🚫 Performance 기능 충돌로 비활성화
+        add_change_history_functions_to_class(DBManager)
+        
+        # 🆕 아이콘 로드 개선 (기존 코드와 호환)
+        if USE_NEW_CONFIG:
+            self._setup_window_with_new_config()
+        else:
+            self._setup_window_legacy()
+        
+        # 바인딩 설정
+        for key in ('<Control-o>', '<Control-O>'):
+            self.window.bind(key, self.load_folder)
+        self.window.bind('<F1>', self.show_user_guide)
+        
+        self.status_bar.config(text="Ready")
+        self.update_log("DB Manager 초기화 완료 - 장비 생산 엔지니어 모드")
+        if self.db_schema:
+            self.update_log("로컬 데이터베이스 초기화 완료")
+        else:
+            self.update_log("DB 스키마 초기화 실패")
+        
+        # 🆕 새로운 서비스 시스템 초기화 (UI 설정 후)
+        self._setup_service_layer()
+        
+        # 기본적으로는 장비 생산 엔지니어용 탭만 생성
+        self.create_comparison_tabs()
+
+    def _setup_window_with_new_config(self):
+        """새로운 설정 시스템을 사용한 윈도우 설정"""
+        self.window = tk.Tk()
+        self.window.title(self.config.app_name)
+        self.window.geometry(self.config.window_geometry)
+        
+        try:
+            icon_path = self.config.icon_path
+            if icon_path and icon_path.exists():
+                self.window.iconbitmap(str(icon_path))
+        except Exception as e:
+            print(f"아이콘 로드 실패: {str(e)}")
+        
+        self._setup_common_ui()
+    
+    def _setup_window_legacy(self):
+        """기존 방식의 윈도우 설정 (fallback)"""
+        self.window = tk.Tk()
+        self.window.title("DB Manager")
+        self.window.geometry("1300x800")
+        try:
+            if getattr(sys, 'frozen', False):
+                application_path = sys._MEIPASS
+            else:
+                # src/app/manager.py에서 프로젝트 루트로 2번 상위 디렉토리로 이동
+                application_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            icon_path = os.path.join(application_path, "resources", "icons", "db_compare.ico")
+            self.window.iconbitmap(icon_path)
+        except Exception as e:
+            print(f"아이콘 로드 실패: {str(e)}")
+        
+        self._setup_common_ui()
+    
+    def _setup_common_ui(self):
+        """공통 UI 요소들을 설정합니다."""
+        self.create_menu()
+        self.status_bar = ttk.Label(self.window, relief=tk.SUNKEN, anchor=tk.W)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.main_notebook = ttk.Notebook(self.window)
+        self.main_notebook.pack(expand=True, fill=tk.BOTH)
+        self.comparison_notebook = ttk.Notebook(self.main_notebook)
+        self.main_notebook.add(self.comparison_notebook, text="DB 비교")
+        self.log_text = tk.Text(self.window, height=5, state=tk.DISABLED)
+        self.log_text.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=5)
+        log_scrollbar = ttk.Scrollbar(self.log_text, orient="vertical", command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=log_scrollbar.set)
+        log_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    
+    def _setup_service_layer(self):
+        """🆕 새로운 서비스 레이어 초기화"""
+        self.service_factory = None
+        self.legacy_adapter = None
+        self.use_new_services = {}
+        
+        if not USE_NEW_SERVICES or not SERVICES_AVAILABLE:
+            # 새로운 서비스 시스템이 아직 구현되지 않았으므로 기존 방식 사용 (정상 동작)
+            return
+        
+        try:
+            # 설정 파일에서 서비스 사용 설정 로드
+            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "config", "settings.json")
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+                    self.use_new_services = settings.get('use_new_services', {})
+                    service_config = settings.get('service_config', {})
+            else:
+                self.use_new_services = {'equipment_service': False}
+                service_config = {}
+            
+            # 서비스 팩토리 초기화
+            if self.db_schema:
+                self.service_factory = ServiceFactory(self.db_schema, service_config)
+                self.legacy_adapter = LegacyAdapter(self.service_factory)
+                
+                # 서비스 상태 로깅
+                status = self.service_factory.get_service_status()
+                self.update_log(f"서비스 레이어 초기화 완료: {len(status)}개 서비스 등록")
+                
+                # 활성 서비스들 확인
+                active_services = [k for k, v in self.use_new_services.items() if v]
+                if active_services:
+                    self.update_log(f"활성 서비스: {', '.join(active_services)}")
+                
+            else:
+                self.update_log("DB 스키마가 없어 서비스 팩토리를 초기화할 수 없습니다")
+                
+        except Exception as e:
+            self.update_log(f"서비스 레이어 초기화 실패: {str(e)}")
+            print(f"Service layer initialization failed: {str(e)}")
+    
+    def _should_use_service(self, service_name: str) -> bool:
+        """특정 서비스 사용 여부 확인"""
+        return (USE_NEW_SERVICES and 
+                SERVICES_AVAILABLE and 
+                self.service_factory is not None and
+                self.use_new_services.get(service_name, False))
+
+    def get_db_connection(self):
+        """
+        데이터베이스 연결을 반환합니다.
+        다른 모듈들(qc.py, defaultdb.py, file_handler.py)에서 사용됩니다.
+        
+        Returns:
+            sqlite3.Connection: 데이터베이스 연결 객체
+        """
+        if self.db_schema:
+            import sqlite3
+            return sqlite3.connect(self.db_schema.db_path)
+        else:
+            raise Exception("DBSchema가 초기화되지 않았습니다.")
+
+    def show_about(self):
+        """프로그램 정보 다이얼로그 표시"""
+        messagebox.showinfo(
+            "프로그램 정보",
+            "DB Manager\n버전: 1.0.1\n제작자: kwanglim92\n\n이 프로그램은 DB 파일 비교, 관리, 보고서 생성 등 다양한 기능을 제공합니다."
+        )
+
+    def show_user_guide(self, event=None):
+        """사용자 가이드 다이얼로그 표시"""
+        guide_text = (
+            "[DB Manager 사용자 가이드]\n\n"
+            "• 폴더 열기: 파일 > 폴더 열기 (Ctrl+O)\n"
+            "• DB 비교: 여러 DB 파일을 불러와 값 차이, 격자 뷰, 보고서 등 다양한 탭에서 확인\n"
+            "• 유지보수 모드: 도구 > Maintenance Mode (비밀번호 필요)\n"
+            "• Default DB 관리, QC 검수, 변경 이력 등은 유지보수 모드에서만 사용 가능\n"
+            "• 각 탭에서 우클릭 및 버튼으로 항목 추가/삭제/내보내기 등 다양한 작업 지원\n"
+            "• 문의: github.com/kwanglim92/DB_Manager\n\n"
+            "= 사용자 역할 =\n"
+            "• 장비 생산 엔지니어: DB 비교 기능 사용\n"
+            "• QC 엔지니어: Maintenance Mode로 모든 기능 사용"
+        )
+        messagebox.showinfo("사용 설명서", guide_text)
+
+    def create_menu(self):
+        """메뉴바를 생성합니다."""
+        menubar = tk.Menu(self.window)
+        # 파일 메뉴
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="폴더 열기 (Ctrl+O)", command=self.load_folder)
+        file_menu.add_separator()
+        file_menu.add_command(label="보고서 내보내기", command=self.export_report)
+        file_menu.add_separator()
+        file_menu.add_command(label="종료", command=self.window.quit)
+        menubar.add_cascade(label="파일", menu=file_menu)
+        # 도구 메뉴
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        tools_menu.add_command(label="👤 사용자 모드 전환", command=self.toggle_maint_mode)
+        tools_menu.add_separator()
+        tools_menu.add_command(label="🔐 비밀번호 변경", command=self.show_change_password_dialog)
+        tools_menu.add_command(label="⚙️ 설정", command=self.show_settings_dialog)
+        menubar.add_cascade(label="도구", menu=tools_menu)
+        # 도움말 메뉴
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="사용 설명서 (F1)", command=self.show_user_guide)
+        help_menu.add_separator()
+        help_menu.add_command(label="프로그램 정보", command=self.show_about)
+        menubar.add_cascade(label="도움말", menu=help_menu)
+        self.window.config(menu=menubar)
+
+    def update_log(self, message):
+        """로그 표시 영역에 메시지를 추가합니다."""
+        self.log_text.configure(state=tk.NORMAL)
+        from datetime import datetime
+        self.log_text.insert(tk.END, f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}\n")
+        self.log_text.see(tk.END)
+        self.log_text.configure(state=tk.DISABLED)
+
+    def toggle_maint_mode(self):
+        """유지보수 모드 토글"""
+        if self.maint_mode:
+            self.update_log("유지보수 모드가 비활성화되었습니다. (장비 생산 엔지니어 모드)")
+            self.maint_mode = False
+            self.status_bar.config(text="장비 생산 엔지니어 모드")
+            self.disable_maint_features()
+        else:
+            password = simpledialog.askstring("유지보수 모드", "QC 엔지니어 비밀번호를 입력하세요:", show="*")
+            if password is None:
+                return
+            from app.utils import verify_password
+            if verify_password(password):
+                self.enable_maint_features()
+            else:
+                messagebox.showerror("오류", "비밀번호가 일치하지 않습니다.")
+        
+        self.update_default_db_ui_state()
+
+    def show_change_password_dialog(self):
+        """유지보수 모드 비밀번호 변경 다이얼로그를 표시합니다."""
+        current_password = simpledialog.askstring("비밀번호 변경", "현재 비밀번호를 입력하세요:", show="*")
+        if current_password is None:
+            return
+        from app.utils import verify_password, change_maintenance_password
+        if not verify_password(current_password):
+            messagebox.showerror("오류", "현재 비밀번호가 일치하지 않습니다.")
+            return
+        new_password = simpledialog.askstring("비밀번호 변경", "새 비밀번호를 입력하세요:", show="*")
+        if new_password is None:
+            return
+        confirm_password = simpledialog.askstring("비밀번호 변경", "새 비밀번호를 다시 입력하세요:", show="*")
+        if confirm_password is None:
+            return
+        if new_password != confirm_password:
+            messagebox.showerror("오류", "새 비밀번호가 일치하지 않습니다.")
+            return
+        if change_maintenance_password(current_password, new_password):
+            messagebox.showinfo("성공", "비밀번호가 성공적으로 변경되었습니다.")
+            self.update_log("유지보수 모드 비밀번호가 변경되었습니다.")
+        else:
+            messagebox.showerror("오류", "비밀번호 변경에 실패했습니다.")
+
+    def show_settings_dialog(self):
+        """설정 다이얼로그를 표시합니다."""
+        from app.ui.dialogs.enhanced_dialogs import show_settings_dialog
+        
+        # 현재 설정 로드
+        current_settings = {}
+        if hasattr(self, 'config') and self.config:
+            ui_settings = self.config.get_setting('ui', {})
+            current_settings = {
+                'theme': ui_settings.get('theme', 'default') if isinstance(ui_settings, dict) else 'default'
+            }
+        
+        # 설정 다이얼로그 표시
+        result = show_settings_dialog(self.window, current_settings)
+        
+        if result:
+            # 설정 적용
+            self.apply_settings(result)
+            self.update_log("설정이 업데이트되었습니다.")
+    
+    def apply_settings(self, settings):
+        """설정 적용"""
+        if not hasattr(self, 'config') or not self.config:
+            return
+            
+        # 테마 설정 적용
+        if 'theme' in settings:
+            ui_settings = self.config.get_setting('ui', {})
+            if not isinstance(ui_settings, dict):
+                ui_settings = {}
+            ui_settings['theme'] = settings['theme']
+            self.config.set_setting('ui', ui_settings)
+            
+            # 설정 파일 저장
+            try:
+                if self.config.save_settings():
+                    self.update_log(f"테마가 '{settings['theme']}'로 변경되었습니다.")
+                else:
+                    self.update_log("설정 저장에 실패했습니다.")
+            except Exception as e:
+                self.update_log(f"설정 저장 중 오류: {e}")
+
+    def update_default_db_ui_state(self):
+        """유지보수 모드에 따라 Default DB 관련 UI 요소들의 상태를 업데이트합니다."""
+        if hasattr(self, 'show_default_candidates_cb'):
+            if self.maint_mode:
+                self.show_default_candidates_cb.configure(state="normal")
+            else:
+                if hasattr(self, 'show_default_candidates_var'):
+                    self.show_default_candidates_var.set(False)
+                self.show_default_candidates_cb.configure(state="disabled")
+                self.update_comparison_view()
+        
+        self.update_comparison_context_menu_state()
+        
+        # 모든 탭 업데이트
+        if hasattr(self, 'update_all_tabs'):
+            # 탭 업데이트는 파일이 로드된 경우에만
+            if self.merged_df is not None:
+                self.update_all_tabs()
+
+    def enable_maint_features(self):
+        """유지보수 모드 활성화 - QC 엔지니어용 탭들을 추가합니다."""
+        try:
+            self.maint_mode = True
+            self.update_log("🚀 유지보수 모드 활성화 시작...")
+            
+            # QC 검수 탭 생성
+            self.update_log("📋 QC 검수 탭 생성 중...")
+            self.create_qc_check_tab()
+            
+            # Default DB 관리 탭 생성 (동기적 실행)
+            self.update_log("🔧 Default DB 관리 탭 생성 중...")
+            self.create_default_db_tab()
+            
+            # 변경 이력 관리 탭 생성
+            self.update_log("📊 변경 이력 관리 탭 생성 중...")
+            self.create_change_history_tab()
+            
+            # 상태 업데이트
+            self.update_log("✅ QC 엔지니어 모드가 활성화되었습니다.")
+            self.status_bar.config(text="QC 엔지니어 모드")
+            
+            # Performance 기능 확인 메시지
+            self.update_log("🎯 Performance 기능이 활성화되었습니다!")
+            self.update_log("   - Default DB 관리 탭에서 Performance 관리 버튼들을 확인하세요.")
+            self.update_log("   - 트리뷰에서 가로 스크롤하여 🎯 Performance 컬럼을 확인하세요.")
+            
+        except Exception as e:
+            error_msg = f"유지보수 모드 활성화 중 오류 발생: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", error_msg)
+            print(f"DEBUG - enable_maint_features error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def create_comparison_tabs(self):
+        """비교 관련 탭 생성 - 기본 기능만"""
+        self.create_grid_view_tab()
+        self.create_comparison_tab()
+        self.create_diff_only_tab()
+        # 보고서, 간단 비교, 고급 분석은 QC 탭으로 이동
+
+    def create_qc_tabs_with_advanced_features(self):
+        """QC 탭들을 고급 기능과 함께 생성"""
+        try:
+            # Enhanced QC 기능 사용 시도
+            from app.enhanced_qc import add_enhanced_qc_functions_to_class
+            add_enhanced_qc_functions_to_class(self.__class__)
+            
+            # QC 검수 탭 생성 (향상된 기능)
+            if not hasattr(self, 'qc_check_frame') or self.qc_check_frame is None:
+                self.create_enhanced_qc_tab()
+                self.qc_check_frame = True  # 플래그 설정
+                self.update_log("[QC] 향상된 QC 검수 탭이 생성되었습니다.")
+            
+            # QC 보고서 탭 생성
+            self.create_report_tab_in_qc()
+            
+        except ImportError:
+            # Enhanced QC를 사용할 수 없는 경우 기본 QC 기능 사용
+            from app.qc import add_qc_check_functions_to_class
+            add_qc_check_functions_to_class(self.__class__)
+            
+            if not hasattr(self, 'qc_check_frame') or self.qc_check_frame is None:
+                self.create_qc_check_tab()
+                self.qc_check_frame = True
+                self.update_log("[QC] 기본 QC 검수 탭이 생성되었습니다.")
+            
+            self.create_report_tab_in_qc()
+        
+        except Exception as e:
+            self.update_log(f"❌ QC 탭 생성 중 오류: {str(e)}")
+            # 기본 QC 탭이라도 생성하려고 시도
+            try:
+                from app.qc import add_qc_check_functions_to_class
+                add_qc_check_functions_to_class(self.__class__)
+                if not hasattr(self, 'qc_check_frame') or self.qc_check_frame is None:
+                    self.create_qc_check_tab()
+                    self.qc_check_frame = True
+            except Exception as fallback_error:
+                self.update_log(f"❌ 기본 QC 탭 생성도 실패: {str(fallback_error)}")
+
+    def goto_qc_check_tab(self):
+        """QC 검수 탭으로 이동"""
+        if not self.maint_mode:
+            messagebox.showwarning("접근 제한", "QC 검수는 Maintenance Mode에서만 사용 가능합니다.")
+            return
+        
+        try:
+            # QC 탭이 있는지 확인하고 선택
+            for i in range(self.main_notebook.index("end")):
+                tab_text = self.main_notebook.tab(i, "text")
+                if "QC" in tab_text or "검수" in tab_text:
+                    self.main_notebook.select(i)
+                    self.update_log("[Navigation] QC 검수 탭으로 이동했습니다.")
+                    return
+            
+            # QC 탭이 없으면 생성
+            self.update_log("[QC] QC 검수 탭이 없어서 새로 생성합니다.")
+            self.create_qc_tabs_with_advanced_features()
+            
+            # 다시 탭 찾기 및 선택
+            for i in range(self.main_notebook.index("end")):
+                tab_text = self.main_notebook.tab(i, "text")
+                if "QC" in tab_text or "검수" in tab_text:
+                    self.main_notebook.select(i)
+                    self.update_log("[Navigation] 새로 생성된 QC 검수 탭으로 이동했습니다.")
+                    return
+                    
+        except Exception as e:
+            error_msg = f"QC 검수 탭 이동 중 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", error_msg)
+
+    def perform_qc_check(self):
+        """QC 검수 실행 - Enhanced QC 우선 사용"""
+        try:
+            self.update_log("🚀 QC 검수 실행 시작...")
+            
+            # Enhanced QC 기능 사용 시도
+            if hasattr(self, 'perform_enhanced_qc_check'):
+                self.update_log("🔧 Enhanced QC 기능 사용")
+                return self.perform_enhanced_qc_check()
+            elif hasattr(self, 'perform_qc_check_enhanced'):
+                self.update_log("🔧 Enhanced QC 기능 사용 (대체)")
+                return self.perform_qc_check_enhanced()
+            else:
+                # 기본 QC 기능 fallback
+                self.update_log("📋 기본 QC 기능으로 fallback")
+                messagebox.showinfo(
+                    "QC 검수 실행", 
+                    "Enhanced QC 기능을 사용할 수 없어 기본 QC 기능을 사용합니다.\n"
+                    "더 자세한 검수를 위해서는 Enhanced QC 기능을 활성화해주세요."
+                )
+                # 여기에 기본 QC 로직 구현 가능
+                return True
+                
+        except Exception as e:
+            error_msg = f"QC 검수 실행 중 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", error_msg)
+            return False
+
+    def create_report_tab_in_qc(self):
+        """QC 노트북에 보고서 탭 생성"""
+        if not hasattr(self, 'qc_notebook'):
+            return
+            
+        report_tab = ttk.Frame(self.qc_notebook)
+        self.qc_notebook.add(report_tab, text="보고서")
+        
+        control_frame = ttk.Frame(report_tab)
+        control_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        export_btn = ttk.Button(control_frame, text="보고서 내보내기", command=self.export_report)
+        export_btn.pack(side=tk.RIGHT, padx=10)
+        
+        columns = ["Module", "Part", "ItemName"] + (self.file_names if self.file_names else [])
+        self.qc_report_tree = ttk.Treeview(report_tab, columns=columns, show="headings", selectmode="browse")
+        
+        for col in columns:
+            self.qc_report_tree.heading(col, text=col)
+            self.qc_report_tree.column(col, width=120)
+        
+        v_scroll = ttk.Scrollbar(report_tab, orient="vertical", command=self.qc_report_tree.yview)
+        h_scroll = ttk.Scrollbar(report_tab, orient="horizontal", command=self.qc_report_tree.xview)
+        self.qc_report_tree.configure(yscroll=v_scroll.set, xscroll=h_scroll.set)
+        
+        v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+        self.qc_report_tree.pack(expand=True, fill=tk.BOTH)
+        
+        self.update_qc_report_view()
+
+    def update_qc_report_view(self):
+        """QC 보고서 뷰 업데이트"""
+        if not hasattr(self, 'qc_report_tree'):
+            return
+            
+        for item in self.qc_report_tree.get_children():
+            self.qc_report_tree.delete(item)
+            
+        if self.merged_df is not None:
+            grouped = self.merged_df.groupby(["Module", "Part", "ItemName"])
+            for (module, part, item_name), group in grouped:
+                values = [module, part, item_name]
+                for fname in self.file_names:
+                    model_data = group[group["Model"] == fname]
+                    if not model_data.empty:
+                        values.append(str(model_data["ItemValue"].iloc[0]))
+                    else:
+                        values.append("-")
+                self.qc_report_tree.insert("", "end", values=values)
+
+    def create_diff_only_tab(self):
+        """차이만 보기 탭 생성"""
+        diff_tab = ttk.Frame(self.comparison_notebook)
+        self.comparison_notebook.add(diff_tab, text="🔍 차이점 분석")
+        
+        # 상단 정보 패널
+        control_frame = ttk.Frame(diff_tab)
+        control_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        self.diff_only_count_label = ttk.Label(control_frame, text="값이 다른 항목: 0개")
+        self.diff_only_count_label.pack(side=tk.RIGHT, padx=10)
+        
+        # 트리뷰 생성
+        if self.file_names:
+            columns = ["Module", "Part", "ItemName"] + self.file_names
+        else:
+            columns = ["Module", "Part", "ItemName"]
+            
+        self.diff_only_tree = ttk.Treeview(diff_tab, columns=columns, show="headings", selectmode="extended")
+        
+        # 헤딩 설정
+        for col in columns:
+            self.diff_only_tree.heading(col, text=col)
+            if col in ["Module", "Part", "ItemName"]:
+                self.diff_only_tree.column(col, width=120)
+            else:
+                self.diff_only_tree.column(col, width=150)
+        
+        # 스크롤바 추가
+        v_scroll = ttk.Scrollbar(diff_tab, orient="vertical", command=self.diff_only_tree.yview)
+        h_scroll = ttk.Scrollbar(diff_tab, orient="horizontal", command=self.diff_only_tree.xview)
+        self.diff_only_tree.configure(yscroll=v_scroll.set, xscroll=h_scroll.set)
+        
+        # 위젯 배치
+        v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+        self.diff_only_tree.pack(expand=True, fill=tk.BOTH)
+        
+        # 차이점 데이터 업데이트
+        self.update_diff_only_view()
+
+    def update_diff_only_view(self):
+        """차이점만 보기 탭 업데이트 - 하이라이트 제거"""
+        if not hasattr(self, 'diff_only_tree'):
+            return
+            
+        for item in self.diff_only_tree.get_children():
+            self.diff_only_tree.delete(item)
+        
+        diff_count = 0
+        if self.merged_df is not None:
+            # 컬럼 업데이트
+            columns = ["Module", "Part", "ItemName"] + self.file_names
+            self.diff_only_tree["columns"] = columns
+            
+            for col in columns:
+                self.diff_only_tree.heading(col, text=col)
+                if col in ["Module", "Part", "ItemName"]:
+                    self.diff_only_tree.column(col, width=120)
+                else:
+                    self.diff_only_tree.column(col, width=150)
+            
+            grouped = self.merged_df.groupby(["Module", "Part", "ItemName"])
+            
+            for (module, part, item_name), group in grouped:
+                # 각 파일별 값 추출
+                file_values = {}
+                for model in self.file_names:
+                    model_data = group[group["Model"] == model]
+                    if not model_data.empty:
+                        file_values[model] = str(model_data["ItemValue"].iloc[0])
+                    else:
+                        file_values[model] = "-"
+                
+                # 차이점이 있는지 확인
+                unique_values = set(v for v in file_values.values() if v != "-")
+                if len(unique_values) > 1:
+                    # 차이점이 있는 항목만 추가 (하이라이트 없이)
+                    row_values = [module, part, item_name]
+                    row_values.extend([file_values.get(model, "-") for model in self.file_names])
+                    
+                    self.diff_only_tree.insert("", "end", values=row_values)
+                    diff_count += 1
+        
+        # 차이점 카운트 업데이트
+        if hasattr(self, 'diff_only_count_label'):
+            self.diff_only_count_label.config(text=f"값이 다른 항목: {diff_count}개")
+
+    def create_report_tab(self):
+        report_tab = ttk.Frame(self.comparison_notebook)
+        self.comparison_notebook.add(report_tab, text="보고서")
+        control_frame = ttk.Frame(report_tab)
+        control_frame.pack(fill=tk.X, padx=5, pady=5)
+        export_btn = ttk.Button(control_frame, text="보고서 내보내기", command=self.export_report)
+        export_btn.pack(side=tk.RIGHT, padx=10)
+        columns = ["Module", "Part", "ItemName"] + self.file_names
+        self.report_tree = ttk.Treeview(report_tab, columns=columns, show="headings", selectmode="browse")
+        for col in columns:
+            self.report_tree.heading(col, text=col)
+            self.report_tree.column(col, width=120)
+        v_scroll = ttk.Scrollbar(report_tab, orient="vertical", command=self.report_tree.yview)
+        h_scroll = ttk.Scrollbar(report_tab, orient="horizontal", command=self.report_tree.xview)
+        self.report_tree.configure(yscroll=v_scroll.set, xscroll=h_scroll.set)
+        v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+        self.report_tree.pack(expand=True, fill=tk.BOTH)
+        self.update_report_view()
+
+    def update_report_view(self):
+        for item in self.report_tree.get_children():
+            self.report_tree.delete(item)
+        if self.merged_df is not None:
+            grouped = self.merged_df.groupby(["Module", "Part", "ItemName"])
+            for (module, part, item_name), group in grouped:
+                values = [module, part, item_name]
+                for fname in self.file_names:
+                    values.append(group[fname].iloc[0] if fname in group else "")
+                self.report_tree.insert("", "end", values=values)
+
+    def export_report(self):
+        # 보고서 내보내기 기능 (실제 구현은 utils.py 등에서 분리 가능)
+        try:
+            from tkinter import filedialog
+            import pandas as pd
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel 파일", "*.xlsx"), ("CSV 파일", "*.csv"), ("모든 파일", "*.*")],
+                title="보고서 내보내기"
+            )
+            if not file_path:
+                return
+            data = []
+            for item in self.report_tree.get_children():
+                data.append(self.report_tree.item(item)["values"])
+            df = pd.DataFrame(data, columns=["Module", "Part", "ItemName"] + self.file_names)
+            if file_path.endswith(".csv"):
+                df.to_csv(file_path, index=False, encoding="utf-8-sig")
+            else:
+                df.to_excel(file_path, index=False)
+            messagebox.showinfo("완료", "보고서가 성공적으로 저장되었습니다.")
+        except Exception as e:
+            messagebox.showerror("오류", f"보고서 내보내기 중 오류 발생: {str(e)}")
+
+
+    def load_folder(self, event=None):
+        # 파일 확장자 필터 설정
+        filetypes = [
+            ("DB 파일", "*.txt;*.db;*.csv"),
+            ("텍스트 파일", "*.txt"),
+            ("CSV 파일", "*.csv"),
+            ("DB 파일", "*.db"),
+            ("모든 파일", "*.*")
+        ]
+        files = filedialog.askopenfilenames(
+            title="📂 DB 파일을 선택하세요",
+            filetypes=filetypes,
+            initialdir=self.folder_path if self.folder_path else None
+        )
+        if not files:
+            self.status_bar.config(text="파일 선택이 취소되었습니다.")
+            return
+        loading_dialog = LoadingDialog(self.window)
+        try:
+            import pandas as pd
+            import os
+            import sqlite3
+            df_list = []
+            self.file_names = []
+            # 🆕 QC 파일 선택을 위한 uploaded_files 딕셔너리 생성
+            self.uploaded_files = {}
+            total_files = len(files)
+            loading_dialog.update_progress(0, "파일 로딩 준비 중...")
+            for idx, file in enumerate(files, 1):
+                try:
+                    progress = (idx / total_files) * 70
+                    loading_dialog.update_progress(
+                        progress,
+                        f"파일 로딩 중... ({idx}/{total_files})"
+                    )
+                    file_name = os.path.basename(file)
+                    base_name = os.path.splitext(file_name)[0]
+                    ext = os.path.splitext(file_name)[1].lower()
+                    if ext == '.txt':
+                        df = pd.read_csv(file, delimiter="\t", dtype=str)
+                        # 텍스트 파일의 필수 컬럼 확인 및 추가
+                        required_columns = ['Module', 'Part', 'ItemName', 'ItemType', 'ItemValue', 'ItemDescription']
+                        if all(col in df.columns for col in required_columns):
+                            # 표준 텍스트 파일 형식: ItemType 정보 보존
+                            df = df[required_columns].copy()
+                        else:
+                            # 호환성을 위한 fallback: 기본 컬럼명 추가
+                            if 'ItemType' not in df.columns:
+                                df['ItemType'] = 'double'  # 기본값
+                            if 'ItemDescription' not in df.columns:
+                                df['ItemDescription'] = ''
+                    elif ext == '.csv':
+                        df = pd.read_csv(file, dtype=str)
+                        # CSV 파일에서도 ItemType 보존 시도
+                        if 'ItemType' not in df.columns:
+                            df['ItemType'] = 'double'  # 기본값
+                    elif ext == '.db':
+                        conn = sqlite3.connect(file)
+                        df = pd.read_sql("SELECT * FROM main_table", conn)
+                        conn.close()
+                        # DB 파일에서도 ItemType 보존 시도
+                        if 'ItemType' not in df.columns:
+                            df['ItemType'] = 'double'  # 기본값
+                    
+                    df["Model"] = base_name
+                    df_list.append(df)
+                    self.file_names.append(base_name)
+                    # 🆕 QC 파일 선택을 위해 파일 정보 저장
+                    self.uploaded_files[file_name] = file
+                except Exception as e:
+                    messagebox.showwarning(
+                        "경고", 
+                        f"'{file_name}' 파일 로드 중 오류 발생:\n{str(e)}"
+                    )
+            if df_list:
+                self.folder_path = os.path.dirname(files[0])
+                loading_dialog.update_progress(75, "데이터 병합 중...")
+                self.merged_df = pd.concat(df_list, ignore_index=True)
+                loading_dialog.update_progress(85, "화면 업데이트 중...")
+                self.update_all_tabs()
+                loading_dialog.update_progress(100, "완료!")
+                loading_dialog.close()
+                
+                # 🆕 QC 파일 선택 가능 상태 로그 추가
+                self.update_log(f"[파일 로드] {len(self.uploaded_files)}개 파일이 QC 검수 대상으로 등록되었습니다.")
+                
+                messagebox.showinfo(
+                    "로드 완료",
+                    f"총 {len(df_list)}개의 DB 파일을 성공적으로 로드했습니다.\n"
+                    f"• 폴더: {self.folder_path}\n"
+                    f"• 파일: {', '.join(self.file_names)}\n"
+                    f"• QC 검수 파일 선택 가능: {len(self.uploaded_files)}개"
+                )
+                self.status_bar.config(
+                    text=f"총 {len(df_list)}개의 DB 파일이 로드되었습니다. "
+                         f"(폴더: {os.path.basename(self.folder_path)})"
+                )
+            else:
+                loading_dialog.close()
+                messagebox.showerror("오류", "파일을 로드할 수 없습니다.")
+                self.status_bar.config(text="파일 로드 실패")
+        except Exception as e:
+            loading_dialog.close()
+            messagebox.showerror("오류", f"예기치 않은 오류가 발생했습니다:\n{str(e)}")
+
+    def update_all_tabs(self):
+        # 기존 탭 제거
+        for tab in self.comparison_notebook.winfo_children():
+            tab.destroy()
+        # 탭 다시 생성
+        self.create_comparison_tabs()
+        
+        # 격자뷰와 차이점뷰 업데이트
+        if hasattr(self, 'update_grid_view'):
+            self.update_grid_view()
+        if hasattr(self, 'update_diff_only_view'):
+            self.update_diff_only_view()
+        
+        # QC 보고서 뷰도 업데이트 (유지보수 모드인 경우)
+        if self.maint_mode and hasattr(self, 'update_qc_report_view'):
+            self.update_qc_report_view()
+
+    def create_grid_view_tab(self):
+        """격자뷰 탭 생성 - 트리뷰 구조"""
+        grid_frame = ttk.Frame(self.comparison_notebook)
+        self.comparison_notebook.add(grid_frame, text="📊 메인 비교")
+        
+        # 상단 정보 패널
+        info_frame = ttk.Frame(grid_frame)
+        info_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        # 통계 정보 라벨들
+        self.grid_total_label = ttk.Label(info_frame, text="총 파라미터: 0")
+        self.grid_total_label.pack(side=tk.LEFT, padx=10)
+        
+        self.grid_modules_label = ttk.Label(info_frame, text="모듈 수: 0")
+        self.grid_modules_label.pack(side=tk.LEFT, padx=10)
+        
+        self.grid_parts_label = ttk.Label(info_frame, text="파트 수: 0")
+        self.grid_parts_label.pack(side=tk.LEFT, padx=10)
+        
+        # 차이점 개수 라벨 추가
+        self.grid_diff_label = ttk.Label(info_frame, text="값이 다른 항목: 0", foreground="red")
+        self.grid_diff_label.pack(side=tk.RIGHT, padx=10)
+        
+
+        
+        # 메인 트리뷰 생성 (계층 구조)
+        self.grid_tree = ttk.Treeview(grid_frame, selectmode="extended")
+        
+        # 동적 컬럼 설정
+        if self.file_names:
+            columns = tuple(self.file_names)
+        else:
+            columns = ("값",)
+            
+        self.grid_tree["columns"] = columns
+        
+        # 첫 번째 컬럼 (트리 구조용)
+        self.grid_tree.heading("#0", text="구조", anchor="w")
+        self.grid_tree.column("#0", width=250, anchor="w")
+        
+        # 파일별 값 컬럼들
+        for col in columns:
+            self.grid_tree.heading(col, text=col, anchor="center")
+            self.grid_tree.column(col, width=150, anchor="center")
+        
+        # 스크롤바 추가
+        v_scroll = ttk.Scrollbar(grid_frame, orient="vertical", command=self.grid_tree.yview)
+        h_scroll = ttk.Scrollbar(grid_frame, orient="horizontal", command=self.grid_tree.xview)
+        self.grid_tree.configure(yscroll=v_scroll.set, xscroll=h_scroll.set)
+        
+        # 위젯 배치
+        v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+        self.grid_tree.pack(expand=True, fill=tk.BOTH)
+        
+        # 격자뷰 데이터 업데이트
+        self.update_grid_view()
+
+    def update_grid_view(self):
+        """격자뷰 데이터 업데이트 - 트리뷰 구조"""
+        if not hasattr(self, 'grid_tree'):
+            return
+            
+        # 기존 데이터 삭제
+        for item in self.grid_tree.get_children():
+            self.grid_tree.delete(item)
+        
+        if self.merged_df is None or self.merged_df.empty:
+            # 통계 정보 초기화
+            if hasattr(self, 'grid_total_label'):
+                self.grid_total_label.config(text="총 파라미터: 0개")
+                self.grid_modules_label.config(text="모듈 수: 0개") 
+                self.grid_parts_label.config(text="파트 수: 0개")
+            return
+        
+        # 동적 컬럼 업데이트
+        columns = tuple(self.file_names) if self.file_names else ("값",)
+        self.grid_tree["columns"] = columns
+        
+        # 컬럼 헤딩 업데이트
+        for col in columns:
+            self.grid_tree.heading(col, text=col, anchor="center")
+            self.grid_tree.column(col, width=150, anchor="center")
+        
+        # 계층별 스타일 태그 설정
+        # 모듈 레벨 - 가장 크고 굵게 (기본 파란색)
+        self.grid_tree.tag_configure("module", 
+                                    font=("Arial", 11, "bold"), 
+                                    background="#F5F5F5", 
+                                    foreground="#1565C0")
+        
+        # 모듈 레벨 - 차이 있음 (빨간색 강조)
+        self.grid_tree.tag_configure("module_diff", 
+                                    font=("Arial", 11, "bold"), 
+                                    background="#F5F5F5", 
+                                    foreground="#D32F2F")
+        
+        # 파트 레벨 - 중간 크기, 볼드
+        self.grid_tree.tag_configure("part", 
+                                    font=("Arial", 10, "bold"), 
+                                    background="#FAFAFA", 
+                                    foreground="#424242")
+        
+        # 파트 레벨 - 모든 값 동일 (초록색)
+        self.grid_tree.tag_configure("part_clean", 
+                                    font=("Arial", 10, "bold"), 
+                                    background="#FAFAFA", 
+                                    foreground="#2E7D32")
+        
+        # 파트 레벨 - 차이 있음 (빨간색 강조)
+        self.grid_tree.tag_configure("part_diff", 
+                                    font=("Arial", 10, "bold"), 
+                                    background="#FAFAFA", 
+                                    foreground="#D32F2F")
+        
+
+        
+        # 파라미터 레벨 - 기본 크기
+        self.grid_tree.tag_configure("parameter_same", 
+                                    font=("Arial", 9), 
+                                    background="white", 
+                                    foreground="black")
+        
+        # 차이점이 있는 파라미터 - 전체 목록 탭과 동일한 색상
+        self.grid_tree.tag_configure("parameter_different", 
+                                    font=("Arial", 9), 
+                                    background="#FFECB3", 
+                                    foreground="#E65100")
+        
+        # 계층 구조 데이터 구성
+        modules_data = {}
+        total_params = 0
+        diff_count = 0
+        
+        grouped = self.merged_df.groupby(["Module", "Part", "ItemName"])
+        
+        for (module, part, item_name), group in grouped:
+            if module not in modules_data:
+                modules_data[module] = {}
+            if part not in modules_data[module]:
+                modules_data[module][part] = {}
+            
+            # 각 파일별 값 수집
+            values = []
+            for model in self.file_names:
+                model_data = group[group["Model"] == model]
+                if not model_data.empty:
+                    values.append(str(model_data["ItemValue"].iloc[0]))
+                else:
+                    values.append("-")
+            
+            # 값 차이 확인 (빈 값 제외)
+            non_empty_values = [v for v in values if v != "-"]
+            has_difference = len(set(non_empty_values)) > 1 if len(non_empty_values) > 1 else False
+            
+            modules_data[module][part][item_name] = {
+                "values": values,
+                "has_difference": has_difference
+            }
+            total_params += 1
+            if has_difference:
+                diff_count += 1
+        
+        # 트리뷰에 계층 구조로 데이터 추가
+        for module_name in sorted(modules_data.keys()):
+            # 모듈 레벨 통계 계산
+            module_total = sum(len(modules_data[module_name][part]) for part in modules_data[module_name])
+            module_diff = sum(1 for part in modules_data[module_name] 
+                            for item in modules_data[module_name][part] 
+                            if modules_data[module_name][part][item]["has_difference"])
+            
+            # 모듈 표시 - 파란색 통일
+            if module_diff == 0:
+                module_text = f"📁 {module_name} ({module_total})"
+            else:
+                module_text = f"📁 {module_name} ({module_total}) Diff: {module_diff}"
+            module_tag = "module"
+            
+            # 모듈 노드 추가
+            module_node = self.grid_tree.insert("", "end", 
+                                               text=module_text, 
+                                               values=[""] * len(columns), 
+                                               open=True,
+                                               tags=(module_tag,))
+            
+            for part_name in sorted(modules_data[module_name].keys()):
+                # 파트 레벨 통계 계산
+                part_total = len(modules_data[module_name][part_name])
+                part_diff = sum(1 for item in modules_data[module_name][part_name] 
+                              if modules_data[module_name][part_name][item]["has_difference"])
+                
+                # 파트 표시 - 차이가 없으면 초록색, 있으면 회색
+                if part_diff == 0:
+                    part_text = f"📂 {part_name} ({part_total})"
+                    part_tag = "part_clean"
+                else:
+                    part_text = f"📂 {part_name} ({part_total}) Diff: {part_diff}"
+                    part_tag = "part_diff"
+                
+                # 파트 노드 추가
+                part_node = self.grid_tree.insert(module_node, "end", 
+                                                 text=part_text, 
+                                                 values=[""] * len(columns), 
+                                                 open=True,
+                                                 tags=(part_tag,))
+                
+                for item_name in sorted(modules_data[module_name][part_name].keys()):
+                    # 파라미터 노드 추가 - 기본 크기, 차이점에 따라 색상 구분
+                    item_data = modules_data[module_name][part_name][item_name]
+                    values = item_data["values"]
+                    has_difference = item_data["has_difference"]
+                    
+                    # 태그 선택
+                    tag = "parameter_different" if has_difference else "parameter_same"
+                    
+                    self.grid_tree.insert(part_node, "end", 
+                                        text=item_name, 
+                                        values=values, 
+                                        tags=(tag,))
+        
+        # 통계 정보 업데이트
+        if hasattr(self, 'grid_total_label'):
+            self.grid_total_label.config(text=f"총 파라미터: {total_params}")
+            self.grid_modules_label.config(text=f"모듈 수: {len(modules_data)}")
+            
+            total_parts = sum(len(parts) for parts in modules_data.values())
+            self.grid_parts_label.config(text=f"파트 수: {total_parts}")
+            
+            # 차이점 개수도 표시
+            if hasattr(self, 'grid_diff_label'):
+                self.grid_diff_label.config(text=f"값이 다른 항목: {diff_count}")
+
+    def create_comparison_tab(self):
+        comparison_frame = ttk.Frame(self.comparison_notebook)
+        self.comparison_notebook.add(comparison_frame, text="📋 전체 목록")
+        style = ttk.Style()
+        style.configure("Custom.Treeview", rowheight=22)
+        
+        # 상단 검색 및 제어 패널
+        top_frame = ttk.Frame(comparison_frame)
+        top_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        # 검색 기능 추가 (좌측)
+        search_frame = ttk.Frame(top_frame)
+        search_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        ttk.Label(search_frame, text="ItemName 검색:").pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=25)
+        self.search_entry.pack(side=tk.LEFT, padx=(0, 5))
+        self.search_entry.bind('<KeyRelease>', self.on_search_changed)
+        
+        self.search_clear_btn = ttk.Button(search_frame, text="지우기", command=self.clear_search, width=8)
+        self.search_clear_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # 검색 결과 정보
+        self.search_result_label = ttk.Label(search_frame, text="", foreground="blue")
+        self.search_result_label.pack(side=tk.LEFT, padx=(5, 0))
+        
+        control_frame = ttk.Frame(comparison_frame)
+        control_frame.pack(fill=tk.X, padx=5, pady=5)
+        if self.maint_mode:
+            self.select_all_var = tk.BooleanVar(value=False)
+            self.select_all_cb = ttk.Checkbutton(
+                control_frame,
+                text="모두 선택",
+                variable=self.select_all_var,
+                command=self.toggle_select_all_checkboxes
+            )
+            self.select_all_cb.pack(side=tk.LEFT, padx=5)
+        if self.maint_mode:
+            self.selected_count_label = ttk.Label(control_frame, text="선택된 항목: 0개")
+            self.selected_count_label.pack(side=tk.RIGHT, padx=10)
+            self.send_to_default_btn = ttk.Button(
+                control_frame,
+                text="Default DB로 전송",
+                command=self.add_to_default_db
+            )
+            self.send_to_default_btn.pack(side=tk.RIGHT, padx=10)
+        else:
+            self.diff_count_label = ttk.Label(control_frame, text="값이 다른 항목: 0개")
+            self.diff_count_label.pack(side=tk.RIGHT, padx=10)
+        self.item_checkboxes = {}
+        if self.maint_mode:
+            columns = ["Checkbox", "Module", "Part", "ItemName"] + self.file_names
+        else:
+            columns = ["Module", "Part", "ItemName"] + self.file_names
+        self.comparison_tree = ttk.Treeview(comparison_frame, selectmode="extended", style="Custom.Treeview")
+        self.comparison_tree["columns"] = columns
+        self.comparison_tree.heading("#0", text="", anchor="w")
+        self.comparison_tree.column("#0", width=0, stretch=False)
+        col_offset = 0
+        if self.maint_mode:
+            self.comparison_tree.heading("Checkbox", text="선택")
+            self.comparison_tree.column("Checkbox", width=50, anchor="center")
+            col_offset = 1
+        for idx, col in enumerate(["Module", "Part", "ItemName"]):
+            self.comparison_tree.heading(col, text=col, anchor="w")
+            self.comparison_tree.column(col, width=100)
+        for model in self.file_names:
+            self.comparison_tree.heading(model, text=model, anchor="w")
+            self.comparison_tree.column(model, width=150)
+        v_scroll = ttk.Scrollbar(comparison_frame, orient="vertical", 
+                                command=self.comparison_tree.yview)
+        h_scroll = ttk.Scrollbar(comparison_frame, orient="horizontal", 
+                                command=self.comparison_tree.xview)
+        self.comparison_tree.configure(yscroll=v_scroll.set, xscroll=h_scroll.set)
+        v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+        self.comparison_tree.pack(expand=True, fill=tk.BOTH)
+        self.comparison_tree.bind("<<TreeviewSelect>>", self.update_selected_count)
+        self.create_comparison_context_menu()
+        if not self.maint_mode:
+            self.update_comparison_context_menu_state()
+        self.update_comparison_view()
+
+    def add_to_default_db(self):
+        """체크된 항목들을 Default DB로 전송 - 중복도 기반 통계 분석"""
+        if not self.maint_mode:
+            messagebox.showwarning("권한 없음", "유지보수 모드에서만 Default DB에 항목을 추가할 수 있습니다.")
+            return
+
+        # 체크된 항목들 수집
+        selected_items = []
+        if any(self.item_checkboxes.values()):
+            # 체크박스가 하나라도 선택된 경우
+            for item_key, is_checked in self.item_checkboxes.items():
+                if is_checked:
+                    # item_key에서 module, part, item_name 분리
+                    parts = item_key.split('_')
+                    if len(parts) >= 3:
+                        module, part, item_name = parts[0], parts[1], '_'.join(parts[2:])
+                        
+                        # 트리뷰에서 해당 항목 찾기
+                        for child_id in self.comparison_tree.get_children():
+                            values = self.comparison_tree.item(child_id, 'values')
+                            if len(values) >= 4 and values[1] == module and values[2] == part and values[3] == item_name:
+                                selected_items.append(child_id)
+                                break
+        else:
+            # 체크박스가 선택되지 않은 경우, 트리뷰에서 직접 선택된 항목 사용
+            selected_items = self.comparison_tree.selection()
+
+        if not selected_items:
+            messagebox.showwarning("선택 필요", "Default DB에 추가할 항목을 먼저 선택해주세요.")
+            return
+
+        # 장비 유형 선택 또는 새로 생성
+        equipment_types = self.db_schema.get_equipment_types()
+        type_names = [f"{name} (ID: {type_id})" for type_id, name, _ in equipment_types]
+        
+        # 고급 선택 다이얼로그
+        dlg = tk.Toplevel(self.window)
+        dlg.title("Default DB 추가 - 통계 기반 기준값 설정")
+        dlg.geometry("700x600")
+        dlg.transient(self.window)
+        dlg.grab_set()
+        
+        # 부모 창 중앙에 배치
+        try:
+            from app.utils import center_dialog_on_parent
+            center_dialog_on_parent(dlg, self.window)
+        except ImportError:
+            # fallback: 화면 중앙에 배치
+            dlg.geometry("+%d+%d" % (self.window.winfo_rootx() + 50, self.window.winfo_rooty() + 50))
+        
+        # 장비 유형 선택 프레임
+        type_frame = ttk.LabelFrame(dlg, text="🔧 장비 유형 선택", padding=10)
+        type_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(type_frame, text="기존 장비 유형:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        
+        selected_type = tk.StringVar()
+        combo = ttk.Combobox(type_frame, textvariable=selected_type, values=type_names, state="readonly", width=40)
+        combo.grid(row=0, column=1, padx=5, pady=5)
+        if type_names:
+            combo.set(type_names[0])
+        
+        ttk.Label(type_frame, text="또는 새 장비 유형:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        new_type_var = tk.StringVar()
+        new_type_entry = ttk.Entry(type_frame, textvariable=new_type_var, width=40)
+        new_type_entry.grid(row=1, column=1, padx=5, pady=5)
+        
+        # 통계 분석 설정
+        stats_frame = ttk.LabelFrame(dlg, text="📊 통계 분석 설정 (중복도 기반 기준값 도출)", padding=10)
+        stats_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        analyze_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(stats_frame, text="✓ 값의 중복도 분석 수행 (권장)", variable=analyze_var).grid(row=0, column=0, columnspan=2, sticky="w", pady=5)
+        
+        ttk.Label(stats_frame, text="신뢰도 임계값:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        confidence_var = tk.DoubleVar(value=50.0)
+        confidence_scale = ttk.Scale(stats_frame, from_=0, to=100, variable=confidence_var, orient="horizontal", length=200)
+        confidence_scale.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        
+        confidence_label = ttk.Label(stats_frame, text="50.0% (과반수 이상)")
+        confidence_label.grid(row=1, column=2, sticky="w", padx=5, pady=5)
+        
+        def update_confidence_label(event=None):
+            val = confidence_var.get()
+            if val >= 80:
+                desc = "매우 높음"
+            elif val >= 60:
+                desc = "높음" 
+            elif val >= 40:
+                desc = "보통"
+            else:
+                desc = "낮음"
+            confidence_label.config(text=f"{val:.1f}% ({desc})")
+        confidence_scale.configure(command=update_confidence_label)
+        
+        # 미리보기 영역
+        preview_frame = ttk.LabelFrame(dlg, text="📋 추가될 항목 미리보기 및 통계", padding=10)
+        preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        preview_text = tk.Text(preview_frame, height=12, wrap=tk.WORD, font=("Consolas", 9))
+        preview_scroll = ttk.Scrollbar(preview_frame, orient="vertical", command=preview_text.yview)
+        preview_text.configure(yscrollcommand=preview_scroll.set)
+        
+        preview_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        preview_text.pack(fill=tk.BOTH, expand=True)
+        
+        def update_preview():
+            """미리보기 업데이트"""
+            preview_text.delete(1.0, tk.END)
+            
+            if not analyze_var.get():
+                preview_text.insert(tk.END, f"📋 단순 추가 모드\n")
+                preview_text.insert(tk.END, f"총 {len(selected_items)}개 항목을 첫 번째 파일 값으로 추가합니다.\n\n")
+                for item_id in selected_items[:10]:  # 처음 10개만 미리보기
+                    item_values = self.comparison_tree.item(item_id, "values")
+                    col_offset = 1 if self.maint_mode else 0
+                    module, part, item_name = item_values[col_offset], item_values[col_offset+1], item_values[col_offset+2]
+                    value = item_values[col_offset+3]
+                    preview_text.insert(tk.END, f"  • {item_name}: {value}\n")
+                if len(selected_items) > 10:
+                    preview_text.insert(tk.END, f"  ... 및 {len(selected_items)-10}개 더\n")
+                return
+            
+            # 통계 분석 수행
+            try:
+                stats_analysis = self.analyze_parameter_statistics(selected_items)
+                
+                preview_text.insert(tk.END, f"📊 === 통계 분석 결과 ===\n")
+                preview_text.insert(tk.END, f"분석된 파라미터: {len(stats_analysis)}개\n")
+                preview_text.insert(tk.END, f"전체 파일 수: {len(self.file_names)}개\n")
+                preview_text.insert(tk.END, f"파일 목록: {', '.join(self.file_names)}\n\n")
+                
+                high_confidence = 0
+                medium_confidence = 0
+                low_confidence = 0
+                threshold = confidence_var.get() / 100.0
+                
+                for param_name, stats in stats_analysis.items():
+                    confidence = stats['confidence_score']
+                    if confidence >= threshold:
+                        high_confidence += 1
+                        status = "✅ 추가됨"
+                        color_tag = "high"
+                    elif confidence >= 0.3:
+                        medium_confidence += 1
+                        status = "⚠️ 중간 신뢰도"
+                        color_tag = "medium"
+                    else:
+                        low_confidence += 1
+                        status = "❌ 낮은 신뢰도"
+                        color_tag = "low"
+                    
+                    # 값 분포 정보
+                    value_info = f"{stats['most_common_value']}"
+                    if stats['unique_values'] > 1:
+                        value_info += f" (총 {stats['unique_values']}가지 값)"
+                    
+                    preview_text.insert(tk.END, f"{param_name}:\n")
+                    preview_text.insert(tk.END, f"  기준값: {value_info}\n")
+                    preview_text.insert(tk.END, f"  신뢰도: {confidence*100:.1f}% ({stats['occurrence_count']}/{stats['total_files']})\n")
+                    
+                    if stats['is_numeric']:
+                        preview_text.insert(tk.END, f"  수치범위: {stats['min']:.3f} ~ {stats['max']:.3f}\n")
+                        preview_text.insert(tk.END, f"  평균±표준편차: {stats['mean']:.3f} ± {stats['std']:.3f}\n")
+                    
+                    preview_text.insert(tk.END, f"  상태: {status}\n\n")
+                
+                preview_text.insert(tk.END, f"📈 === 요약 ===\n")
+                preview_text.insert(tk.END, f"추가될 항목 (신뢰도 ≥{confidence_var.get():.1f}%): {high_confidence}개\n")
+                preview_text.insert(tk.END, f"중간 신뢰도 (30-{confidence_var.get():.1f}%): {medium_confidence}개\n") 
+                preview_text.insert(tk.END, f"제외될 항목 (<30%): {low_confidence}개\n")
+                
+            except Exception as e:
+                preview_text.insert(tk.END, f"❌ 통계 분석 오류: {str(e)}")
+        
+        # 버튼 프레임
+        button_frame = ttk.Frame(dlg)
+        button_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Button(button_frame, text="🔄 미리보기 업데이트", command=update_preview).pack(side=tk.LEFT, padx=5)
+        
+        def show_duplicate_check():
+            """중복 검사 다이얼로그 표시"""
+            duplicate_analysis = self.get_duplicate_analysis(selected_items)
+            self.show_duplicate_analysis_dialog(duplicate_analysis)
+        
+        ttk.Button(button_frame, text="🔍 중복 검사", command=show_duplicate_check).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="❌ 취소", command=dlg.destroy).pack(side=tk.RIGHT, padx=5)
+        
+        def on_confirm():
+            # 장비 유형 결정
+            if new_type_var.get().strip():
+                # 새 장비 유형 생성
+                type_name = new_type_var.get().strip()
+                type_id = self.db_schema.add_equipment_type(type_name, f"다중 모델 비교를 통해 자동 생성된 장비 유형")
+                self.update_log(f"새 장비 유형 생성: {type_name} (ID: {type_id})")
+                
+                # 변경 이력 기록
+                self.db_schema.log_change_history(
+                    "add", "equipment_type", type_name, "", 
+                    f"multi-model comparison based", "admin"
+                )
+                
+            elif selected_type.get():
+                # 기존 장비 유형 사용
+                type_id_str = selected_type.get().split("ID: ")[1][:-1]
+                type_id = int(type_id_str)
+                type_name = selected_type.get().split(" (ID:")[0]
+            else:
+                messagebox.showerror("오류", "장비 유형을 선택하거나 새로 입력해주세요.")
+                return
+            
+            # 실제 DB 추가 로직
+            try:
+                if analyze_var.get():
+                    # 통계 기반 추가
+                    stats_analysis = self.analyze_parameter_statistics(selected_items)
+                    added_count, updated_count, skipped_count = self.add_parameters_with_statistics(
+                        type_id, stats_analysis, confidence_var.get() / 100.0
+                    )
+                    
+                    result_msg = (f"🎯 통계 기반 Default DB 추가 완료:\n\n"
+                                 f"📊 분석된 파라미터: {len(stats_analysis)}개\n"
+                                 f"✅ 새로 추가: {added_count}개\n"
+                                 f"🔄 업데이트: {updated_count}개\n"
+                                 f"❌ 낮은 신뢰도로 제외: {skipped_count}개\n\n"
+                                 f"💡 신뢰도 기준: {confidence_var.get():.1f}%")
+                else:
+                    # 단순 추가
+                    added_count = self.add_parameters_simple(type_id, selected_items)
+                    result_msg = f"📋 단순 추가 완료:\n\n총 {added_count}개의 항목이 Default DB에 추가되었습니다."
+                
+                # 종합 변경 이력 기록
+                total_changes = added_count + (updated_count if analyze_var.get() else 0)
+                self.db_schema.log_change_history(
+                    "bulk_add", "parameter", f"{type_name}_bulk_operation", 
+                    "", f"Added/Updated {total_changes} parameters via multi-model analysis", "admin"
+                )
+                
+                messagebox.showinfo("✅ 작업 완료", result_msg)
+                dlg.destroy()
+                self.update_comparison_view() # UI 갱신
+                
+                # Default DB 관리 탭이 있으면 업데이트
+                if hasattr(self, 'default_db_tree') and hasattr(self, 'equipment_type_combo'):
+                    self.refresh_equipment_types()
+                    # 방금 추가한 장비 유형이 선택되도록 설정
+                    type_names = self.equipment_type_combo['values']
+                    target_type_name = None
+                    
+                    # 현재 사용된 장비 유형을 기준으로 찾기
+                    for type_name_option in type_names:
+                        if f"ID: {type_id}" in type_name_option:
+                            target_type_name = type_name_option
+                            break
+                    
+                    # 찾은 유형으로 설정하고 데이터 업데이트
+                    if target_type_name:
+                        self.equipment_type_combo.set(target_type_name)
+                        self.on_equipment_type_selected()
+                        self.update_log(f"✅ Default DB 관리 탭 업데이트 완료: {target_type_name}")
+                    else:
+                        # fallback: 현재 타입명으로 찾기
+                        for type_name_option in type_names:
+                            if type_name in type_name_option:
+                                self.equipment_type_combo.set(type_name_option)
+                                self.on_equipment_type_selected()
+                                self.update_log(f"✅ Default DB 관리 탭 업데이트 완료 (타입명 매칭): {type_name_option}")
+                                break
+                        else:
+                            # 최종 fallback: 첫 번째 항목 선택
+                            if type_names:
+                                self.equipment_type_combo.set(type_names[0])
+                                self.on_equipment_type_selected()
+                                self.update_log("✅ Default DB 관리 탭 업데이트 완료 (첫 번째 항목)")
+                            else:
+                                self.update_log("⚠️ 장비 유형이 없어 Default DB 탭 업데이트 실패")
+                
+            except Exception as e:
+                messagebox.showerror("❌ 오류", f"Default DB 추가 중 오류 발생:\n{str(e)}")
+                self.update_log(f"Default DB 추가 오류: {str(e)}")
+
+        ttk.Button(button_frame, text="✅ Default DB에 추가", command=on_confirm).pack(side=tk.RIGHT, padx=5)
+        
+        # 다이얼로그 강제 업데이트 및 포커스
+        dlg.update_idletasks()
+        dlg.lift()
+        dlg.focus_force()
+        
+        # 초기 미리보기 업데이트
+        dlg.after(200, update_preview)
+        update_confidence_label()  # 초기 신뢰도 라벨 설정
+
+    def analyze_parameter_statistics(self, selected_items):
+        """
+        선택된 파라미터들의 통계 분석을 수행합니다.
+        중복도 기반으로 가장 적합한 기준값을 결정합니다.
+        
+        Args:
+            selected_items: 선택된 트리뷰 아이템 ID 리스트
+            
+        Returns:
+            dict: 파라미터별 통계 정보
+        """
+        stats_analysis = {}
+        
+        for item_id in selected_items:
+            item_values = self.comparison_tree.item(item_id, "values")
+            
+            # 유지보수 모드 여부에 따라 인덱스 조정
+            col_offset = 1 if self.maint_mode else 0
+            module, part, item_name = item_values[col_offset], item_values[col_offset+1], item_values[col_offset+2]
+            
+            param_name = item_name  # ItemName만 사용하여 통일
+            
             # 모든 파일에서 해당 파라미터의 값 수집
             file_values = []
             for i, model in enumerate(self.file_names):
@@ -2115,49 +3567,35 @@ class DBManager:
             param_frame = ttk.LabelFrame(control_frame, text="Parameter Management", padding=12)
             param_frame.pack(fill=tk.X, pady=(0, 8))
             
-            # 기본 관리 버튼들
-            basic_mgmt_frame = ttk.Frame(param_frame)
-            basic_mgmt_frame.pack(fill=tk.X, pady=(0, 8))
+            # 모든 관리 버튼들을 한 행에 배치
+            mgmt_buttons_frame = ttk.Frame(param_frame)
+            mgmt_buttons_frame.pack(fill=tk.X)
             
-            add_param_btn = ttk.Button(basic_mgmt_frame, text="Add Parameter", 
-                                     command=self.add_parameter_dialog, width=15)
+            # 4개 버튼을 한 행에 배치 - 버튼 크기 개선
+            add_param_btn = ttk.Button(mgmt_buttons_frame, text="Add Parameter", 
+                                     command=self.add_parameter_dialog, width=13)
             add_param_btn.pack(side=tk.LEFT, padx=(0, 6))
             
-            delete_param_btn = ttk.Button(basic_mgmt_frame, text="Delete Selected", 
-                                        command=self.delete_selected_parameters, width=15)
+            delete_param_btn = ttk.Button(mgmt_buttons_frame, text="Delete Selected", 
+                                        command=self.delete_selected_parameters, width=13)
             delete_param_btn.pack(side=tk.LEFT, padx=(0, 6))
             
-            # 필터링 및 보기 옵션
-            filter_frame = ttk.Frame(param_frame)
-            filter_frame.pack(fill=tk.X, pady=(0, 8))
-            
-            # Performance 필터 체크박스
-            self.show_performance_only_var = tk.BooleanVar()
-            performance_cb = ttk.Checkbutton(
-                filter_frame, 
-                text="Show Performance Parameters Only", 
-                variable=self.show_performance_only_var,
-                command=self.apply_performance_filter
-            )
-            performance_cb.pack(side=tk.LEFT, padx=(0, 12))
-            
-            # 텍스트 파일 기능
-            text_frame = ttk.Frame(param_frame)
-            text_frame.pack(fill=tk.X)
-            
-            import_btn = ttk.Button(text_frame, text="Import from Text File", 
+            import_btn = ttk.Button(mgmt_buttons_frame, text="Import from Text File", 
                                   command=self.import_from_text_file, width=18)
             import_btn.pack(side=tk.LEFT, padx=(0, 6))
             
-            export_btn = ttk.Button(text_frame, text="Export to Text File", 
-                                  command=self.export_to_text_file, width=18)
-            export_btn.pack(side=tk.LEFT, padx=(0, 6))
+            export_btn = ttk.Button(mgmt_buttons_frame, text="Export to Text File", 
+                                  command=self.export_to_text_file, width=16)
+            export_btn.pack(side=tk.LEFT)
             
             # Excel 기능 제거됨
             
             # 파라미터 목록 트리뷰
             tree_container = ttk.LabelFrame(self.default_db_frame, text="Parameter List", padding=10)
             tree_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 8))
+            
+            # 🔍 필터 패널 추가 (새로운 기능)
+            self._create_parameter_filter_panel(tree_container)
             
             tree_frame = ttk.Frame(tree_container)
             tree_frame.pack(fill=tk.BOTH, expand=True)
@@ -2223,6 +3661,9 @@ class DBManager:
             self.create_default_db_context_menu()
             self.default_db_tree.bind("<Button-3>", self.show_default_db_context_menu)
             
+            # 🔍 필터 기능 초기화 (새로운 기능)
+            self._initialize_parameter_filter_functionality()
+            
             # 상태 표시줄
             status_container = ttk.LabelFrame(self.default_db_frame, text="Status Information", padding=10)
             status_container.pack(fill=tk.X, padx=15, pady=(0, 8))
@@ -2254,6 +3695,161 @@ class DBManager:
             print(f"DEBUG - create_default_db_tab error: {e}")
             import traceback
             traceback.print_exc()
+
+    def _create_parameter_filter_panel(self, parent_frame):
+        """파라미터 필터 패널 생성 (새로운 기능)"""
+        try:
+            # 필터 프레임 - Parameter List에 통합된 스타일
+            self.filter_frame = ttk.Frame(parent_frame)
+            self.filter_frame.pack(fill=tk.X, pady=(0, 5))
+            
+            # 구분선
+            separator = ttk.Separator(self.filter_frame, orient='horizontal')
+            separator.pack(fill=tk.X, pady=(5, 8))
+            
+            # 검색 및 필터 행
+            filter_row = ttk.Frame(self.filter_frame)
+            filter_row.pack(fill=tk.X, pady=(0, 8))
+            
+            # 실시간 검색
+            search_frame = ttk.Frame(filter_row)
+            search_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            
+            ttk.Label(search_frame, text="🔎 Search:", font=('Segoe UI', 9)).pack(side=tk.LEFT, padx=(0, 6))
+            self.param_search_var = tk.StringVar()
+            self.param_search_entry = ttk.Entry(search_frame, textvariable=self.param_search_var, width=25, font=('Segoe UI', 9))
+            self.param_search_entry.pack(side=tk.LEFT, padx=(0, 6))
+            
+            # Clear 버튼
+            clear_btn = ttk.Button(search_frame, text="Clear", command=self._clear_parameter_search)
+            clear_btn.pack(side=tk.LEFT, padx=(0, 15))
+            
+            # Performance 필터 체크박스를 Parameter List로 이동
+            self.show_performance_only_var = tk.BooleanVar()
+            performance_cb = ttk.Checkbutton(
+                search_frame, 
+                text="Performance Only", 
+                variable=self.show_performance_only_var,
+                command=self.apply_performance_filter
+            )
+            performance_cb.pack(side=tk.LEFT, padx=(0, 10))
+            
+            # 필터 컨트롤 영역
+            self.advanced_filter_visible = tk.BooleanVar(value=False)
+            
+            control_row = ttk.Frame(filter_row)
+            control_row.pack(side=tk.RIGHT, padx=(10, 0))
+            
+            # 결과 표시 레이블
+            self.filter_result_label = ttk.Label(control_row, text="", foreground="#1976D2", font=('Segoe UI', 8))
+            self.filter_result_label.pack(side=tk.LEFT, padx=(0, 10))
+            
+            # Advanced Filter 토글 버튼
+            self.toggle_advanced_btn = ttk.Button(
+                control_row, 
+                text="▼ Filters", 
+                command=self._toggle_advanced_parameter_filters
+            )
+            self.toggle_advanced_btn.pack(side=tk.LEFT, padx=(0, 5))
+            
+            # Reset 버튼
+            reset_btn = ttk.Button(control_row, text="Reset", command=self._reset_parameter_filters)
+            reset_btn.pack(side=tk.LEFT)
+            
+            # 고급 필터 패널 (처음에는 숨김)
+            self.advanced_filter_frame = ttk.Frame(self.filter_frame)
+            
+            self._create_advanced_parameter_filters()
+            
+            self.update_log("✅ Parameter filters initialized")
+            
+        except Exception as e:
+            self.update_log(f"❌ Parameter filters error: {e}")
+
+    def _create_advanced_parameter_filters(self):
+        """고급 파라미터 필터 생성 - 엔지니어 스타일 단일 행 레이아웃 (새로운 기능)"""
+        try:
+            # 구분선
+            filter_separator = ttk.Separator(self.advanced_filter_frame, orient='horizontal')
+            filter_separator.pack(fill=tk.X, pady=(5, 8))
+            
+            # 필터 행
+            filters_row = ttk.Frame(self.advanced_filter_frame)
+            filters_row.pack(fill=tk.X, pady=(0, 8))
+            
+            # Module Filter
+            module_frame = ttk.Frame(filters_row)
+            module_frame.pack(side=tk.LEFT, padx=(0, 20))
+            
+            ttk.Label(module_frame, text="Module:", font=('Segoe UI', 8)).pack(anchor='w')
+            self.module_filter_var = tk.StringVar()
+            self.module_filter_combo = ttk.Combobox(module_frame, textvariable=self.module_filter_var, 
+                                                  state="readonly", width=12, font=('Segoe UI', 8))
+            self.module_filter_combo.pack()
+            self.module_filter_combo.bind('<<ComboboxSelected>>', self._on_module_filter_changed)
+            
+            # Part Filter
+            part_frame = ttk.Frame(filters_row)
+            part_frame.pack(side=tk.LEFT, padx=(0, 20))
+            
+            ttk.Label(part_frame, text="Part:", font=('Segoe UI', 8)).pack(anchor='w')
+            self.part_filter_var = tk.StringVar()
+            self.part_filter_combo = ttk.Combobox(part_frame, textvariable=self.part_filter_var, 
+                                                state="readonly", width=12, font=('Segoe UI', 8))
+            self.part_filter_combo.pack()
+            self.part_filter_combo.bind('<<ComboboxSelected>>', self._on_part_filter_changed)
+            
+            # Data Type Filter
+            type_frame = ttk.Frame(filters_row)
+            type_frame.pack(side=tk.LEFT, padx=(0, 20))
+            
+            ttk.Label(type_frame, text="Data Type:", font=('Segoe UI', 8)).pack(anchor='w')
+            self.data_type_filter_var = tk.StringVar()
+            self.data_type_filter_combo = ttk.Combobox(type_frame, textvariable=self.data_type_filter_var, 
+                                                     state="readonly", width=10, font=('Segoe UI', 8))
+            self.data_type_filter_combo.pack()
+            self.data_type_filter_combo.bind('<<ComboboxSelected>>', self._on_data_type_filter_changed)
+            
+            self.update_log("✅ Advanced filters ready")
+            
+        except Exception as e:
+            self.update_log(f"❌ Advanced filters error: {e}")
+
+    def _initialize_parameter_filter_functionality(self):
+        """파라미터 필터 기능 초기화 (새로운 기능)"""
+        try:
+            # 필터 관련 변수 초기화
+            self.original_parameter_data = []  # 원본 데이터 보관
+            self.filtered_parameter_data = []  # 필터링된 데이터
+            self.current_sort_column = ""
+            self.current_sort_reverse = False
+            
+            # 이벤트 바인딩
+            self.param_search_var.trace('w', lambda *args: self._apply_parameter_filters())
+            
+            # 🔄 컬럼 헤더 클릭 정렬 설정
+            self._setup_parameter_column_sorting()
+            
+            self.update_log("✅ Parameter 필터 기능 초기화 완료")
+            
+        except Exception as e:
+            self.update_log(f"❌ Parameter 필터 기능 초기화 오류: {e}")
+
+    def _setup_parameter_column_sorting(self):
+        """파라미터 컬럼 헤더 클릭 정렬 설정 (새로운 기능)"""
+        try:
+            columns = self.default_db_tree['columns']
+            
+            # 각 컬럼 헤더에 클릭 이벤트 바인딩
+            for col in columns:
+                # 순서 번호 컬럼은 정렬에서 제외
+                if col != 'no':
+                    self.default_db_tree.heading(col, command=lambda c=col: self._sort_parameter_by_column(c))
+            
+            self.update_log("✅ Parameter 컬럼 정렬 설정 완료")
+            
+        except Exception as e:
+            self.update_log(f"❌ Parameter 컬럼 정렬 설정 오류: {e}")
 
     def refresh_equipment_types(self):
         """장비 유형 목록을 새로고침합니다. (전체 탭 동기화)"""
@@ -2443,13 +4039,72 @@ class DBManager:
         
         # Performance 필터 적용
         if hasattr(self, 'show_performance_only_var') and self.show_performance_only_var.get():
-            default_values = [item for item in default_values if len(item) > 11 and item[11] == 1]
+            default_values = [item for item in default_values if len(item) > 14 and item[14] == 1]
         
+        # 🔍 필터 기능을 위한 원본 데이터 저장 (새로운 기능)
+        if hasattr(self, 'original_parameter_data'):
+            self.original_parameter_data = []
+            for idx, item in enumerate(default_values, 1):
+                try:
+                    if len(item) >= 15:
+                        # 올바른 SQL 순서에 맞게 파싱
+                        record_id, param_name, default_value, min_spec, max_spec, type_name, occurrence_count, total_files, confidence_score, source_files, description, module_name, part_name, item_type, is_performance = item[:15]
+                        
+                        # Performance 표시
+                        performance_display = "Yes" if is_performance == 1 else "No"
+                        
+                        # 필터용 데이터 구조 (DB 데이터 정확히 매핑)
+                        row_data = [
+                            record_id,  # 0: 실제 DB ID
+                            param_name or "",  # 1: ItemName
+                            module_name or "",  # 2: Module (실제 모듈명)
+                            part_name or "",   # 3: Part
+                            item_type or "double",  # 4: Data Type
+                            str(default_value) if default_value is not None else "",  # 5: Default Value
+                            str(min_spec) if min_spec is not None else "",  # 6: Min Spec
+                            str(max_spec) if max_spec is not None else "",  # 7: Max Spec
+                            performance_display,  # 8: Performance
+                            description or ""  # 9: Description
+                        ]
+                        self.original_parameter_data.append(row_data)
+                        
+                    else:
+                        # 이전 버전 호환성
+                        record_id, param_name, default_value, min_spec, max_spec, occurrence_count = item[:6]
+                        row_data = [
+                            record_id,  # 실제 DB ID
+                            param_name or "",
+                            "", "", "double",
+                            str(default_value) if default_value is not None else "",
+                            str(min_spec) if min_spec is not None else "",
+                            str(max_spec) if max_spec is not None else "",
+                            "No", ""
+                        ]
+                        self.original_parameter_data.append(row_data)
+                        
+                except Exception as e:
+                    self.update_log(f"⚠️ 필터 데이터 준비 중 오류: {e}")
+                    continue
+            
+            # 필터링된 데이터도 초기화 (전체 데이터)
+            self.filtered_parameter_data = self.original_parameter_data.copy()
+            
+            # 필터 옵션 업데이트
+            if hasattr(self, '_update_filter_options'):
+                self._update_filter_options()
+            
+            # 필터 적용 (초기에는 모든 데이터)
+            if hasattr(self, '_apply_parameter_filters'):
+                self._apply_parameter_filters()
+                return  # 필터 기능이 있으면 트리뷰 업데이트는 필터에서 처리
+        
+        # 🔍 필터 기능이 없는 경우 기존 방식으로 처리
         # 순차 번호와 함께 데이터 표시
         for idx, item in enumerate(default_values, 1):
             try:
-                if len(item) >= 12:
-                    record_id, param_name, default_value, min_spec, max_spec, occurrence_count, total_files, source_files, description, module_name, part_name, item_type, is_performance = item[:13]
+                if len(item) >= 15:
+                    # 올바른 SQL 순서에 맞게 파싱
+                    record_id, param_name, default_value, min_spec, max_spec, type_name, occurrence_count, total_files, confidence_score, source_files, description, module_name, part_name, item_type, is_performance = item[:15]
                     
                     # Performance 표시
                     performance_display = "Yes" if is_performance == 1 else "No"
@@ -2458,7 +4113,7 @@ class DBManager:
                     values = (
                         str(idx),  # 순차 번호 (1, 2, 3...)
                         param_name or "", 
-                        module_name or "", 
+                        module_name or "",  # 실제 모듈명 사용
                         part_name or "", 
                         item_type or "double",
                         str(default_value) if default_value is not None else "",
@@ -2491,7 +4146,7 @@ class DBManager:
         
         # 상태 업데이트
         total_count = len(default_values)
-        performance_count = sum(1 for item in default_values if len(item) > 11 and item[11] == 1)
+        performance_count = sum(1 for item in default_values if len(item) > 14 and item[14] == 1)
         
         self.default_db_status_label.config(text=f"총 {total_count}개 파라미터 로드됨")
         self.performance_stats_label.config(text=f"🎯 Performance: {performance_count}개")
@@ -4041,7 +5696,7 @@ class DBManager:
             messagebox.showerror("오류", error_msg)
 
     def apply_performance_filter(self):
-        """Performance 필터 적용"""
+        """Performance 필터 적용 - 필터 시스템과 연동"""
         try:
             # 현재 선택된 장비 유형으로 다시 로드
             self.on_equipment_type_selected()
@@ -4076,6 +5731,285 @@ class DBManager:
                 except (ValueError, IndexError):
                     continue
         return None
+
+    # ========== 🔍 새로운 Parameter 필터 기능 메서드들 ==========
+
+    def _sort_parameter_by_column(self, column):
+        """컬럼 헤더 클릭 시 정렬 (새로운 기능)"""
+        try:
+            # 같은 컬럼을 다시 클릭하면 정렬 순서 반전
+            if self.current_sort_column == column:
+                self.current_sort_reverse = not self.current_sort_reverse
+            else:
+                self.current_sort_column = column
+                self.current_sort_reverse = False
+            
+            # 헤더 텍스트 업데이트 (정렬 방향 표시)
+            self._update_sort_headers()
+            
+            # 현재 필터링된 데이터를 정렬
+            self._sort_current_data()
+            
+            # 트리뷰 업데이트
+            self._update_parameter_tree_display()
+            
+            self.update_log(f"📊 컬럼 '{column}' 정렬 적용 ({'내림차순' if self.current_sort_reverse else '오름차순'})")
+            
+        except Exception as e:
+            self.update_log(f"❌ 컬럼 정렬 오류: {e}")
+
+    def _update_sort_headers(self):
+        """정렬 헤더 표시 업데이트 (새로운 기능)"""
+        try:
+            columns = self.default_db_tree['columns']
+            headers = {
+                "no": "No.",
+                "parameter_name": "ItemName",
+                "module": "Module",
+                "part": "Part", 
+                "item_type": "Data Type",
+                "default_value": "Default Value",
+                "min_spec": "Min Spec",
+                "max_spec": "Max Spec",
+                "is_performance": "Performance",
+                "description": "Description"
+            }
+            
+            for col in columns:
+                if col == 'no':
+                    continue
+                    
+                header_text = headers[col]
+                if col == self.current_sort_column:
+                    arrow = " ▲" if not self.current_sort_reverse else " ▼"
+                    header_text += arrow
+                
+                self.default_db_tree.heading(col, text=header_text)
+                
+        except Exception as e:
+            self.update_log(f"❌ 정렬 헤더 업데이트 오류: {e}")
+
+    def _sort_current_data(self):
+        """현재 데이터 정렬 (새로운 기능)"""
+        try:
+            if not self.filtered_parameter_data or not self.current_sort_column:
+                return
+            
+            # 컬럼별 정렬 키 함수 정의
+            sort_key_map = {
+                'parameter_name': lambda x: str(x[1]).lower(),
+                'module': lambda x: str(x[2]).lower(),
+                'part': lambda x: str(x[3]).lower(),
+                'item_type': lambda x: str(x[4]).lower(),
+                'default_value': lambda x: str(x[5]).lower(),
+                'min_spec': lambda x: self._numeric_sort_key(x[6]),
+                'max_spec': lambda x: self._numeric_sort_key(x[7]),
+                'is_performance': lambda x: x[8] == 'Yes',
+                'description': lambda x: str(x[9]).lower()
+            }
+            
+            sort_key = sort_key_map.get(self.current_sort_column, lambda x: str(x[1]).lower())
+            
+            self.filtered_parameter_data.sort(key=sort_key, reverse=self.current_sort_reverse)
+            
+        except Exception as e:
+            self.update_log(f"❌ 데이터 정렬 오류: {e}")
+
+    def _numeric_sort_key(self, value):
+        """숫자 정렬을 위한 키 함수 (새로운 기능)"""
+        try:
+            # 빈 값이나 N/A 처리
+            if not value or value in ['N/A', 'n/a', '', '-']:
+                return float('inf')  # 빈 값은 맨 뒤로
+            
+            # 숫자로 변환 시도
+            return float(value)
+        except (ValueError, TypeError):
+            # 숫자가 아닌 경우 문자열로 정렬
+            return float('inf')
+
+    def _apply_parameter_filters(self):
+        """모든 파라미터 필터 적용 (새로운 기능)"""
+        try:
+            if not hasattr(self, 'original_parameter_data') or not self.original_parameter_data:
+                return
+            
+            # 원본 데이터로부터 필터링 시작
+            filtered_data = self.original_parameter_data.copy()
+            
+            # 1. 빠른 검색 필터
+            search_text = self.param_search_var.get().lower().strip()
+            if search_text:
+                filtered_data = [
+                    row for row in filtered_data
+                    if any(search_text in str(cell).lower() for cell in row[1:])  # No. 컬럼 제외하고 검색
+                ]
+            
+            # 2. 모듈 필터
+            if hasattr(self, 'module_filter_var'):
+                module_filter = self.module_filter_var.get()
+                if module_filter and module_filter != "All":
+                    filtered_data = [row for row in filtered_data if row[2] == module_filter]
+            
+            # 3. 파트 필터  
+            if hasattr(self, 'part_filter_var'):
+                part_filter = self.part_filter_var.get()
+                if part_filter and part_filter != "All":
+                    filtered_data = [row for row in filtered_data if row[3] == part_filter]
+            
+            # 4. 데이터 타입 필터
+            if hasattr(self, 'data_type_filter_var'):
+                data_type_filter = self.data_type_filter_var.get()
+                if data_type_filter and data_type_filter != "All":
+                    filtered_data = [row for row in filtered_data if row[4] == data_type_filter]
+            
+            # 필터링된 데이터 저장
+            self.filtered_parameter_data = filtered_data
+            
+            # 현재 정렬 적용
+            if self.current_sort_column:
+                self._sort_current_data()
+            
+            # 트리뷰 업데이트
+            self._update_parameter_tree_display()
+            
+            # 결과 표시
+            total_count = len(self.original_parameter_data)
+            filtered_count = len(filtered_data)
+            
+            if hasattr(self, 'filter_result_label'):
+                if filtered_count == total_count:
+                    self.filter_result_label.config(text=f"Total: {total_count} parameters")
+                else:
+                    self.filter_result_label.config(text=f"Showing: {filtered_count} / {total_count}")
+            
+        except Exception as e:
+            self.update_log(f"❌ Parameter 필터 적용 오류: {e}")
+
+    def _update_parameter_tree_display(self):
+        """파라미터 트리뷰 화면 업데이트 (새로운 기능)"""
+        try:
+            # 기존 데이터 클리어
+            for item in self.default_db_tree.get_children():
+                self.default_db_tree.delete(item)
+            
+            # 필터링된 데이터로 트리뷰 채우기
+            for i, row in enumerate(self.filtered_parameter_data, 1):
+                # row[0]은 실제 DB ID, row[1:]은 화면 표시 데이터
+                record_id = row[0]  # 실제 DB ID
+                display_row = [i] + list(row[1:])  # 순서 번호 + 화면 데이터
+                
+                # DB ID를 태그로 저장하여 편집/삭제에서 사용
+                self.default_db_tree.insert("", "end", values=display_row, tags=(f"id_{record_id}",))
+            
+        except Exception as e:
+            self.update_log(f"❌ Parameter 트리뷰 업데이트 오류: {e}")
+
+    def _clear_parameter_search(self):
+        """파라미터 검색 필터 지우기 (새로운 기능)"""
+        try:
+            self.param_search_var.set("")
+            if hasattr(self, 'param_search_entry'):
+                self.param_search_entry.focus()
+        except Exception as e:
+            self.update_log(f"❌ 검색 필터 지우기 오류: {e}")
+
+
+
+    def _toggle_advanced_parameter_filters(self):
+        """고급 필터 패널 토글 (새로운 기능)"""
+        try:
+            is_visible = self.advanced_filter_visible.get()
+            
+            if is_visible:
+                # 숨기기
+                self.advanced_filter_frame.pack_forget()
+                self.toggle_advanced_btn.config(text="▼ Filters")
+                self.advanced_filter_visible.set(False)
+            else:
+                # 보이기
+                self.advanced_filter_frame.pack(fill=tk.X, pady=(5, 0))
+                self.toggle_advanced_btn.config(text="▲ Hide")
+                self.advanced_filter_visible.set(True)
+                
+                # 필터 옵션 업데이트
+                self._update_filter_options()
+            
+        except Exception as e:
+            self.update_log(f"❌ 고급 필터 토글 오류: {e}")
+
+    def _update_filter_options(self):
+        """필터 옵션 목록 업데이트 (새로운 기능)"""
+        try:
+            if not hasattr(self, 'original_parameter_data') or not self.original_parameter_data:
+                return
+            
+            # 모듈 목록 업데이트
+            modules = sorted(set(row[2] for row in self.original_parameter_data if row[2]))
+            module_values = ["All"] + modules
+            self.module_filter_combo['values'] = module_values
+            if not self.module_filter_var.get():
+                self.module_filter_var.set("All")
+            
+            # 파트 목록 업데이트
+            parts = sorted(set(row[3] for row in self.original_parameter_data if row[3]))
+            part_values = ["All"] + parts
+            self.part_filter_combo['values'] = part_values
+            if not self.part_filter_var.get():
+                self.part_filter_var.set("All")
+            
+            # 데이터 타입 목록 업데이트
+            data_types = sorted(set(row[4] for row in self.original_parameter_data if row[4]))
+            type_values = ["All"] + data_types
+            self.data_type_filter_combo['values'] = type_values
+            if not self.data_type_filter_var.get():
+                self.data_type_filter_var.set("All")
+            
+            self.update_log("✅ 필터 옵션 업데이트 완료")
+            
+        except Exception as e:
+            self.update_log(f"❌ 필터 옵션 업데이트 오류: {e}")
+
+    def _on_module_filter_changed(self, event=None):
+        """모듈 필터 변경 시 처리 (새로운 기능)"""
+        self._apply_parameter_filters()
+
+    def _on_part_filter_changed(self, event=None):
+        """파트 필터 변경 시 처리 (새로운 기능)"""
+        self._apply_parameter_filters()
+
+    def _on_data_type_filter_changed(self, event=None):
+        """데이터 타입 필터 변경 시 처리 (새로운 기능)"""
+        self._apply_parameter_filters()
+
+    def _reset_parameter_filters(self):
+        """모든 파라미터 필터 초기화 (새로운 기능)"""
+        try:
+            # 검색어 초기화
+            self.param_search_var.set("")
+            
+            # 정렬 초기화
+            self.current_sort_column = ""
+            self.current_sort_reverse = False
+            
+            # 고급 필터 초기화
+            if hasattr(self, 'module_filter_var'):
+                self.module_filter_var.set("All")
+            if hasattr(self, 'part_filter_var'):
+                self.part_filter_var.set("All")
+            if hasattr(self, 'data_type_filter_var'):
+                self.data_type_filter_var.set("All")
+            
+            # 헤더 표시 초기화
+            self._update_sort_headers()
+            
+            # 필터 적용
+            self._apply_parameter_filters()
+            
+            self.update_log("🔄 Parameter Filters Reset")
+            
+        except Exception as e:
+            self.update_log(f"❌ Filter Reset Error: {e}")
 
 
 
