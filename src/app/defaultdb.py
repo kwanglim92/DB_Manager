@@ -140,9 +140,10 @@ def add_default_db_functions_to_class(cls):
         middle_frame = ttk.LabelFrame(default_db_tab, text="파라미터 목록", padding=10)
         middle_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # 트리뷰 생성 (Module, Part 컬럼 추가)
-        columns = ("parameter_name", "module_name", "part_name", "min_spec", "max_spec", "default_value", "description")
+        # 트리뷰 생성 (순차 번호 컬럼으로 변경)
+        columns = ("no", "parameter_name", "module_name", "part_name", "min_spec", "max_spec", "default_value", "description")
         headings = {
+            "no": "No.",  # 순차 번호 컬럼
             "parameter_name": "파라미터명", 
             "module_name": "Module",
             "part_name": "Part",
@@ -152,7 +153,8 @@ def add_default_db_functions_to_class(cls):
             "description": "설명"
         }
         column_widths = {
-            "parameter_name": 200, 
+            "no": 50,  # 순차 번호 컬럼 너비
+            "parameter_name": 220,
             "module_name": 80,
             "part_name": 100,
             "min_spec": 80, 

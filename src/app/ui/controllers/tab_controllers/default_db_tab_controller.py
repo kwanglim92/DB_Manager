@@ -148,9 +148,9 @@ class DefaultDBTabController(TabController):
         tree_frame = ttk.Frame(self.tab_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        # 트리뷰 컬럼 정의 (Performance 컬럼 포함)
+        # 트리뷰 컬럼 정의 (순차 번호 컬럼으로 변경)
         columns = (
-            "id", "parameter_name", "module", "part", "item_type", "default_value", 
+            "no", "parameter_name", "module", "part", "item_type", "default_value", 
             "min_spec", "max_spec", "occurrence_count", "total_files", "confidence_score", 
             "is_performance", "source_files", "description"
         )
@@ -159,7 +159,7 @@ class DefaultDBTabController(TabController):
         
         # 컬럼 헤더 설정
         headers = {
-            "id": "ID",
+            "no": "No.",  # 순차 번호 컬럼
             "parameter_name": "파라미터명",
             "module": "Module",
             "part": "Part", 
@@ -176,8 +176,8 @@ class DefaultDBTabController(TabController):
         }
         
         column_widths = {
-            "id": 50,
-            "parameter_name": 180,
+            "no": 50,  # 순차 번호 컬럼 너비
+            "parameter_name": 200,
             "module": 80,
             "part": 100,
             "item_type": 80,
