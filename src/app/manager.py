@@ -1861,108 +1861,210 @@ class DBManager:
 
     def disable_maint_features(self):
         """유지보수 모드 비활성화 - QC 엔지니어용 탭들을 제거합니다."""
-        # QC 엔지니어용 탭들 제거
-        if hasattr(self, 'main_notebook'):
-            tabs_to_remove = []
-            for tab_id in range(self.main_notebook.index('end')):
-                tab_text = self.main_notebook.tab(tab_id, 'text')
-                if tab_text in ["Default DB 관리", "QC 검수", "변경 이력 관리"]:
-                    tabs_to_remove.append(tab_id)
+        try:
+            self.update_log("🔄 유지보수 모드 비활성화 시작...")
             
-            # 역순으로 제거 (인덱스 변경 방지)
-            for tab_id in reversed(tabs_to_remove):
-                self.main_notebook.forget(tab_id)
-        
-        # QC 엔지니어용 탭 프레임 참조 제거
-        self.qc_check_frame = None
-        self.default_db_frame = None
-        self.change_history_frame = None
-        
-        # QC 노트북 참조 제거
-        if hasattr(self, 'qc_notebook'):
-            del self.qc_notebook
+            # QC 엔지니어용 탭들 제거
+            if hasattr(self, 'main_notebook') and self.main_notebook:
+                tabs_to_remove = []
+                
+                # 역순으로 탭 확인 (인덱스 변경 방지)
+                for tab_id in range(self.main_notebook.index('end') - 1, -1, -1):
+                    try:
+                        tab_text = self.main_notebook.tab(tab_id, 'text')
+                        # 이모지가 포함된 탭 텍스트도 고려하여 패턴 매칭
+                        should_remove = False
+                        if ("Default DB 관리" in tab_text or 
+                            "QC 검수" in tab_text or 
+                            "변경 이력 관리" in tab_text or
+                            "검수" in tab_text):
+                            should_remove = True
+                        
+                        if should_remove:
+                            tabs_to_remove.append((tab_id, tab_text))
+                    except tk.TclError:
+                        continue  # 탭이 이미 제거된 경우
+                
+                # 탭 제거 실행
+                for tab_id, tab_text in tabs_to_remove:
+                    try:
+                        self.main_notebook.forget(tab_id)
+                        self.update_log(f"✅ {tab_text} 탭 제거 완료")
+                    except tk.TclError as e:
+                        self.update_log(f"⚠️ {tab_text} 탭 제거 실패: {e}")
+                        
+                self.update_log(f"🗑️ 총 {len(tabs_to_remove)}개 유지보수 탭 제거 완료")
+            
+            # QC 엔지니어용 탭 프레임 참조 완전 제거
+            self.qc_check_frame = None
+            self.default_db_frame = None
+            self.change_history_frame = None
+            
+            # QC 관련 추가 참조 제거
+            if hasattr(self, 'qc_notebook'):
+                try:
+                    del self.qc_notebook
+                    self.update_log("✅ QC 노트북 참조 제거 완료")
+                except:
+                    pass
+            
+            # QC 관련 위젯 참조 제거
+            qc_widgets = ['qc_type_var', 'qc_type_combobox', 'qc_result_tree', 
+                         'stats_frame', 'chart_frame']
+            for widget_name in qc_widgets:
+                if hasattr(self, widget_name):
+                    try:
+                        delattr(self, widget_name)
+                    except:
+                        pass
+            
+            # 유지보수 모드 비활성화
+            self.maint_mode = False
+            
+            # 상태바 업데이트
+            if hasattr(self, 'status_bar'):
+                self.status_bar.config(text="장비 생산 엔지니어 모드")
+            
+            self.update_log("✅ 유지보수 모드가 완전히 비활성화되었습니다.")
+            
+        except Exception as e:
+            error_msg = f"유지보수 모드 비활성화 중 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            print(f"DEBUG - disable_maint_features error: {e}")
+            import traceback
+            traceback.print_exc()
 
     def create_qc_check_tab(self):
-        """QC 검수 탭 생성 - 완전한 기능 구현"""
-        if self.qc_check_frame is not None:
-            return  # 이미 생성된 경우 중복 생성 방지
+        """QC 검수 탭 생성 - 완전한 기능 구현 및 중복 생성 방지 강화"""
+        try:
+            # 기존 탭 중복 검사 강화
+            if hasattr(self, 'main_notebook') and self.main_notebook:
+                for tab_id in range(self.main_notebook.index('end')):
+                    try:
+                        tab_text = self.main_notebook.tab(tab_id, 'text')
+                        if "QC 검수" in tab_text or "검수" in tab_text:
+                            self.update_log(f"⚠️ QC 검수 탭이 이미 존재함 ({tab_text}) - 기존 탭으로 이동")
+                            self.main_notebook.select(tab_id)
+                            return
+                    except tk.TclError:
+                        continue
             
-        self.qc_check_frame = ttk.Frame(self.main_notebook)
-        self.main_notebook.add(self.qc_check_frame, text="QC 검수")
-        
-        # 🆕 src/app/qc.py의 완전한 QC 탭 기능 사용
-        # 기존 기본 탭 대신 고급 QC 기능이 포함된 탭 생성
-        
-        # 상단 컨트롤 프레임
-        control_frame = ttk.Frame(self.qc_check_frame)
-        control_frame.pack(fill=tk.X, padx=5, pady=5)
+            # 프레임 참조 체크
+            if self.qc_check_frame is not None:
+                self.update_log("⚠️ QC 프레임 참조가 남아있음 - 초기화 후 재생성")
+                self.qc_check_frame = None
+            
+            self.update_log("📋 QC 검수 탭 생성 시작...")
+            
+            # QC 검수 탭 프레임 생성
+            self.qc_check_frame = ttk.Frame(self.main_notebook)
+            self.main_notebook.add(self.qc_check_frame, text="QC 검수")
+            
+            # 🆕 src/app/qc.py의 완전한 QC 탭 기능 사용
+            # 기존 기본 탭 대신 고급 QC 기능이 포함된 탭 생성
+            
+            # 상단 컨트롤 프레임
+            control_frame = ttk.Frame(self.qc_check_frame)
+            control_frame.pack(fill=tk.X, padx=5, pady=5)
 
-        # 장비 유형 선택 프레임
-        type_frame = ttk.LabelFrame(control_frame, text="장비 유형 선택", padding=10)
-        type_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+            # 장비 유형 선택 프레임
+            type_frame = ttk.LabelFrame(control_frame, text="장비 유형 선택", padding=10)
+            type_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
 
-        # 장비 유형 콤보박스
-        ttk.Label(type_frame, text="장비 유형:").pack(side=tk.LEFT, padx=(0, 5))
-        self.qc_type_var = tk.StringVar()
-        self.qc_type_combobox = ttk.Combobox(type_frame, textvariable=self.qc_type_var, state="readonly", width=20)
-        self.qc_type_combobox.pack(side=tk.LEFT, padx=(0, 10))
+            # 장비 유형 콤보박스
+            ttk.Label(type_frame, text="장비 유형:").pack(side=tk.LEFT, padx=(0, 5))
+            self.qc_type_var = tk.StringVar()
+            self.qc_type_combobox = ttk.Combobox(type_frame, textvariable=self.qc_type_var, state="readonly", width=20)
+            self.qc_type_combobox.pack(side=tk.LEFT, padx=(0, 10))
 
-        # 🆕 새로고침 버튼 추가
-        refresh_btn = ttk.Button(type_frame, text="🔄 목록 새로고침", command=self.refresh_qc_equipment_types)
-        refresh_btn.pack(side=tk.LEFT, padx=(5, 10))
+            # 🆕 새로고침 버튼 추가
+            refresh_btn = ttk.Button(type_frame, text="🔄 목록 새로고침", command=self.refresh_qc_equipment_types)
+            refresh_btn.pack(side=tk.LEFT, padx=(5, 10))
 
-        # QC 실행 버튼
-        qc_btn = ttk.Button(type_frame, text="QC 검수 실행", command=self.perform_qc_check)
-        qc_btn.pack(side=tk.LEFT, padx=(0, 5))
+            # QC 실행 버튼
+            qc_btn = ttk.Button(type_frame, text="QC 검수 실행", command=self.perform_qc_check)
+            qc_btn.pack(side=tk.LEFT, padx=(0, 5))
 
-        # 검수 결과 프레임
-        middle_frame = ttk.LabelFrame(self.qc_check_frame, text="검수 결과", padding=10)
-        middle_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+            # 검수 결과 프레임
+            middle_frame = ttk.LabelFrame(self.qc_check_frame, text="검수 결과", padding=10)
+            middle_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # 검수 결과 트리뷰
-        from app.widgets import create_treeview_with_scrollbar
-        
-        columns = ("parameter", "issue_type", "description", "severity")
-        headings = {
-            "parameter": "파라미터", 
-            "issue_type": "문제 유형", 
-            "description": "설명", 
-            "severity": "심각도"
-        }
-        column_widths = {
-            "parameter": 200, 
-            "issue_type": 150, 
-            "description": 300, 
-            "severity": 100
-        }
+            # 검수 결과 트리뷰
+            from app.widgets import create_treeview_with_scrollbar
+            
+            columns = ("parameter", "issue_type", "description", "severity")
+            headings = {
+                "parameter": "파라미터", 
+                "issue_type": "문제 유형", 
+                "description": "설명", 
+                "severity": "심각도"
+            }
+            column_widths = {
+                "parameter": 200, 
+                "issue_type": 150, 
+                "description": 300, 
+                "severity": 100
+            }
 
-        qc_result_frame, self.qc_result_tree = create_treeview_with_scrollbar(
-            middle_frame, columns, headings, column_widths, height=15)
-        qc_result_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+            qc_result_frame, self.qc_result_tree = create_treeview_with_scrollbar(
+                middle_frame, columns, headings, column_widths, height=15)
+            qc_result_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # 검수 통계 프레임
-        bottom_frame = ttk.LabelFrame(self.qc_check_frame, text="검수 통계", padding=10)
-        bottom_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+            # 검수 통계 프레임
+            bottom_frame = ttk.LabelFrame(self.qc_check_frame, text="검수 통계", padding=10)
+            bottom_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        self.stats_frame = ttk.Frame(bottom_frame)
-        self.stats_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+            self.stats_frame = ttk.Frame(bottom_frame)
+            self.stats_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        self.chart_frame = ttk.Frame(bottom_frame)
-        self.chart_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+            self.chart_frame = ttk.Frame(bottom_frame)
+            self.chart_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # 장비 유형 목록 로드
-        self.load_equipment_types_for_qc()
-        
-        self.update_log("✅ 완전한 기능의 QC 검수 탭 생성 완료")
+            # 장비 유형 목록 로드
+            self.load_equipment_types_for_qc()
+            
+            # 생성된 탭으로 자동 이동
+            for tab_id in range(self.main_notebook.index('end')):
+                try:
+                    tab_text = self.main_notebook.tab(tab_id, 'text')
+                    if tab_text == "QC 검수":
+                        self.main_notebook.select(tab_id)
+                        break
+                except tk.TclError:
+                    continue
+            
+            self.update_log("✅ QC 검수 탭 생성 및 활성화 완료")
+            
+        except Exception as e:
+            error_msg = f"QC 검수 탭 생성 중 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            print(f"DEBUG - create_qc_check_tab error: {e}")
+            import traceback
+            traceback.print_exc()
+            # 실패 시 프레임 참조 정리
+            self.qc_check_frame = None
 
     def create_default_db_tab(self):
-        """Default DB 관리 탭 생성"""
+        """Default DB 관리 탭 생성 - 중복 생성 방지 강화"""
         try:
             self.update_log("🔧 Default DB 관리 탭 생성 시작...")
             
+            # 기존 탭 중복 검사 강화
+            if hasattr(self, 'main_notebook') and self.main_notebook:
+                for tab_id in range(self.main_notebook.index('end')):
+                    try:
+                        tab_text = self.main_notebook.tab(tab_id, 'text')
+                        if "Default DB 관리" in tab_text or tab_text == "Default DB 관리":
+                            self.update_log("⚠️ Default DB 관리 탭이 이미 존재함 - 기존 탭으로 이동")
+                            self.main_notebook.select(tab_id)
+                            return
+                    except tk.TclError:
+                        continue
+            
+            # 프레임 참조 체크
             if self.default_db_frame is not None:
-                self.update_log("⚠️ Default DB 탭이 이미 존재함 - 중복 생성 방지")
-                return  # 이미 생성된 경우 중복 생성 방지
+                self.update_log("⚠️ Default DB 프레임 참조가 남아있음 - 초기화 후 재생성")
+                self.default_db_frame = None
             
             # DBSchema 확인
             if not self.db_schema:
@@ -3175,17 +3277,55 @@ class DBManager:
             self.update_log(f"텍스트 파일 내보내기 오류: {str(e)}")
 
     def create_change_history_tab(self):
-        """변경 이력 관리 탭 생성"""
-        if self.change_history_frame is not None:
-            return  # 이미 생성된 경우 중복 생성 방지
+        """변경 이력 관리 탭 생성 - 중복 생성 방지 강화"""
+        try:
+            self.update_log("📊 변경 이력 관리 탭 생성 시작...")
             
-        self.change_history_frame = ttk.Frame(self.main_notebook)
-        self.main_notebook.add(self.change_history_frame, text="변경 이력 관리")
-        
-        info_label = ttk.Label(self.change_history_frame, 
-                              text="변경 이력 관리 기능\n\n파라미터 변경 이력을 추적할 수 있습니다.\nQC 엔지니어 전용 기능입니다.",
-                              justify="center")
-        info_label.pack(expand=True)
+            # 기존 탭 중복 검사 강화
+            if hasattr(self, 'main_notebook') and self.main_notebook:
+                for tab_id in range(self.main_notebook.index('end')):
+                    try:
+                        tab_text = self.main_notebook.tab(tab_id, 'text')
+                        if "변경 이력 관리" in tab_text or tab_text == "변경 이력 관리":
+                            self.update_log("⚠️ 변경 이력 관리 탭이 이미 존재함 - 기존 탭으로 이동")
+                            self.main_notebook.select(tab_id)
+                            return
+                    except tk.TclError:
+                        continue
+            
+            # 프레임 참조 체크
+            if self.change_history_frame is not None:
+                self.update_log("⚠️ 변경 이력 프레임 참조가 남아있음 - 초기화 후 재생성")
+                self.change_history_frame = None
+                
+            self.change_history_frame = ttk.Frame(self.main_notebook)
+            self.main_notebook.add(self.change_history_frame, text="변경 이력 관리")
+            
+            info_label = ttk.Label(self.change_history_frame, 
+                                  text="변경 이력 관리 기능\n\n파라미터 변경 이력을 추적할 수 있습니다.\nQC 엔지니어 전용 기능입니다.",
+                                  justify="center")
+            info_label.pack(expand=True)
+            
+            # 생성된 탭으로 자동 이동
+            for tab_id in range(self.main_notebook.index('end')):
+                try:
+                    tab_text = self.main_notebook.tab(tab_id, 'text')
+                    if tab_text == "변경 이력 관리":
+                        self.main_notebook.select(tab_id)
+                        break
+                except tk.TclError:
+                    continue
+            
+            self.update_log("✅ 변경 이력 관리 탭 생성 및 활성화 완료")
+            
+        except Exception as e:
+            error_msg = f"변경 이력 탭 생성 중 오류: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            print(f"DEBUG - create_change_history_tab error: {e}")
+            import traceback
+            traceback.print_exc()
+            # 실패 시 프레임 참조 정리
+            self.change_history_frame = None
 
     def get_duplicate_analysis(self, selected_items):
         """

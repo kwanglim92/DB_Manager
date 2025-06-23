@@ -292,7 +292,7 @@ def add_enhanced_qc_functions_to_class(cls):
     def create_enhanced_qc_tab(self):
         """향상된 QC 검수 탭 생성"""
         qc_tab = ttk.Frame(self.main_notebook)
-        self.main_notebook.add(qc_tab, text="🔍 QC 검수")
+        self.main_notebook.add(qc_tab, text="QC 검수")
 
         # 🎨 상단 컨트롤 패널 - 향상된 디자인
         control_panel = ttk.LabelFrame(qc_tab, text="🎛️ QC 검수 설정", padding=15)
