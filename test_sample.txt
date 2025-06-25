@@ -1,4 +1,0 @@
-Module	Part	ItemName	ItemType	ItemValue	ItemDescription
-DSP	Cantilever	TestParam1	double	1.5	Test parameter 1 description
-DSP	Cantilever	TestParam2	int	100	Test parameter 2 description
-DSP	Info	TestParam3	string	TestValue	Test parameter 3 description 
