@@ -18,7 +18,8 @@ try:
     USE_NEW_HELPERS = True
 except ImportError:
     USE_NEW_HELPERS = False
-    print("새로운 헬퍼 모듈들을 로드할 수 없습니다. 기존 구현을 사용합니다.")
+    # 조용한 fallback - 헬퍼 모듈이 없을 때는 기존 구현 사용
+    pass
 
 # ===== 기존 코드 호환성을 위한 래퍼 함수들 =====
 
