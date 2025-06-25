@@ -1064,19 +1064,45 @@ class DBManager:
         search_frame = ttk.Frame(top_frame)
         search_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        ttk.Label(search_frame, text="ItemName 검색:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(search_frame, text="🔎 Search:", font=('Segoe UI', 9)).pack(side=tk.LEFT, padx=(0, 5))
         
         self.search_var = tk.StringVar()
         self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=25)
         self.search_entry.pack(side=tk.LEFT, padx=(0, 5))
         self.search_entry.bind('<KeyRelease>', self.on_search_changed)
         
-        self.search_clear_btn = ttk.Button(search_frame, text="지우기", command=self.clear_search, width=8)
+        self.search_clear_btn = ttk.Button(search_frame, text="Clear", command=self.clear_search, width=8)
         self.search_clear_btn.pack(side=tk.LEFT, padx=(0, 10))
         
         # 검색 결과 정보
-        self.search_result_label = ttk.Label(search_frame, text="", foreground="blue")
+        self.search_result_label = ttk.Label(search_frame, text="", foreground="#1976D2", font=('Segoe UI', 8))
         self.search_result_label.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 필터 컨트롤을 같은 행에 추가
+        # 필터 컨트롤 영역
+        self.comparison_advanced_filter_visible = tk.BooleanVar(value=False)
+        
+        control_frame = ttk.Frame(search_frame)
+        control_frame.pack(side=tk.RIGHT, padx=(10, 0))
+        
+        # 결과 표시 레이블
+        self.comparison_filter_result_label = ttk.Label(control_frame, text="", foreground="#1976D2", font=('Segoe UI', 8))
+        self.comparison_filter_result_label.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Advanced Filter 토글 버튼
+        self.comparison_toggle_advanced_btn = ttk.Button(
+            control_frame, 
+            text="▼ Filters", 
+            command=self._toggle_comparison_advanced_filters
+        )
+        self.comparison_toggle_advanced_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Reset 버튼
+        filter_reset_btn = ttk.Button(control_frame, text="Reset", command=self._reset_comparison_filters)
+        filter_reset_btn.pack(side=tk.LEFT)
+        
+        # 고급 필터 패널 생성
+        self._create_comparison_filter_panel(comparison_frame)
         
         control_frame = ttk.Frame(comparison_frame)
         control_frame.pack(fill=tk.X, padx=5, pady=5)
@@ -1134,6 +1160,234 @@ class DBManager:
         if not self.maint_mode:
             self.update_comparison_context_menu_state()
         self.update_comparison_view()
+
+    def _create_comparison_filter_panel(self, parent_frame):
+        """전체 목록 탭 필터 패널 생성 - 고급 필터만 생성"""
+        try:
+            # 메인 필터 컨테이너 프레임 (parent_frame에 직접 배치)
+            self.comparison_main_filter_container = ttk.Frame(parent_frame)
+            self.comparison_main_filter_container.pack(fill=tk.X, pady=(0, 5), padx=10)
+            
+            # 구분선 추가
+            separator = ttk.Separator(self.comparison_main_filter_container, orient='horizontal')
+            separator.pack(fill=tk.X, pady=(5, 8))
+            
+            # 고급 필터 패널 (메인 컨테이너 내부에 배치, 처음에는 숨김)
+            self.comparison_advanced_filter_frame = ttk.Frame(self.comparison_main_filter_container)
+            
+            # 고급 필터 내용 생성 (아직 보이지 않음)
+            self._create_comparison_advanced_filters()
+            
+            # 초기 상태는 숨겨진 상태로 설정
+            print("Filter panel created - advanced filter hidden by default")
+            
+        except Exception as e:
+            print(f"Comparison filter panel error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _create_comparison_advanced_filters(self):
+        """전체 목록 탭 고급 필터 생성 - Module, Part만 포함 (Data Type 제외)"""
+        try:
+            # 구분선
+            filter_separator = ttk.Separator(self.comparison_advanced_filter_frame, orient='horizontal')
+            filter_separator.pack(fill=tk.X, pady=(5, 8))
+            
+            # 필터 행 - 엔지니어 스타일 단일 행 레이아웃
+            filters_row = ttk.Frame(self.comparison_advanced_filter_frame)
+            filters_row.pack(fill=tk.X, pady=(0, 8))
+            
+            # Module Filter
+            module_frame = ttk.Frame(filters_row)
+            module_frame.pack(side=tk.LEFT, padx=(0, 20))
+            
+            ttk.Label(module_frame, text="Module:", font=('Segoe UI', 8)).pack(anchor='w')
+            self.comparison_module_filter_var = tk.StringVar()
+            self.comparison_module_filter_combo = ttk.Combobox(module_frame, textvariable=self.comparison_module_filter_var, 
+                                                      state="readonly", width=12, font=('Segoe UI', 8))
+            self.comparison_module_filter_combo.pack()
+            self.comparison_module_filter_combo.bind('<<ComboboxSelected>>', self._apply_comparison_filters)
+            
+            # Part Filter
+            part_frame = ttk.Frame(filters_row)
+            part_frame.pack(side=tk.LEFT, padx=(0, 20))
+            
+            ttk.Label(part_frame, text="Part:", font=('Segoe UI', 8)).pack(anchor='w')
+            self.comparison_part_filter_var = tk.StringVar()
+            self.comparison_part_filter_combo = ttk.Combobox(part_frame, textvariable=self.comparison_part_filter_var, 
+                                                    state="readonly", width=12, font=('Segoe UI', 8))
+            self.comparison_part_filter_combo.pack()
+            self.comparison_part_filter_combo.bind('<<ComboboxSelected>>', self._apply_comparison_filters)
+            
+            # 엔지니어 관리 버튼들 (QC 모드에서만 표시)
+            if hasattr(self, 'maint_mode') and self.maint_mode:
+                engineer_frame = ttk.Frame(filters_row)
+                engineer_frame.pack(side=tk.LEFT, padx=(30, 0))
+                
+                ttk.Button(engineer_frame, text="📊 비교 통계", command=self._show_comparison_statistics).pack(side=tk.LEFT, padx=(0, 5))
+                ttk.Button(engineer_frame, text="📤 데이터 내보내기", command=self._export_comparison_data).pack(side=tk.LEFT)
+            
+        except Exception as e:
+            print(f"Comparison advanced filters error: {e}")
+
+    def _toggle_comparison_advanced_filters(self):
+        """전체 목록 탭 고급 필터 토글"""
+        try:
+            print(f"Toggle called - Current state: {self.comparison_advanced_filter_visible.get()}")
+            
+            if self.comparison_advanced_filter_visible.get():
+                # 현재 보이는 상태 → 숨기기
+                print("Hiding advanced filters")
+                self.comparison_advanced_filter_frame.pack_forget()
+                self.comparison_toggle_advanced_btn.config(text="▼ Filters")
+                self.comparison_advanced_filter_visible.set(False)
+            else:
+                # 현재 숨겨진 상태 → 보이기
+                print("Showing advanced filters")
+                self.comparison_advanced_filter_frame.pack(fill=tk.X, pady=(0, 5))
+                self.comparison_toggle_advanced_btn.config(text="▲ Filters")
+                self.comparison_advanced_filter_visible.set(True)
+                
+            # UI 업데이트 강제 실행
+            if hasattr(self, 'comparison_main_filter_container'):
+                self.comparison_main_filter_container.update_idletasks()
+            if hasattr(self, 'window'):
+                self.window.update_idletasks()
+            
+            print(f"Toggle complete - New state: {self.comparison_advanced_filter_visible.get()}")
+            
+        except Exception as e:
+            print(f"Filter toggle error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _apply_comparison_filters(self, *args):
+        """전체 목록 탭 필터 적용"""
+        try:
+            # 기존 검색 필터와 함께 Module, Part 필터 적용
+            self.on_search_changed()
+            
+        except Exception as e:
+            print(f"Comparison filters apply error: {e}")
+
+    def _reset_comparison_filters(self):
+        """전체 목록 탭 모든 필터 초기화"""
+        try:
+            # 검색 초기화
+            if hasattr(self, 'search_var'):
+                self.search_var.set("")
+            
+            # 필터 초기화
+            if hasattr(self, 'comparison_module_filter_var'):
+                self.comparison_module_filter_var.set("All")
+            if hasattr(self, 'comparison_part_filter_var'):
+                self.comparison_part_filter_var.set("All")
+            
+            # 필터 적용
+            self._apply_comparison_filters()
+            
+        except Exception as e:
+            print(f"Comparison filters reset error: {e}")
+
+    def _update_comparison_filter_options(self):
+        """전체 목록 탭 필터 옵션 업데이트"""
+        try:
+            if not hasattr(self, 'merged_df') or self.merged_df is None:
+                return
+                
+            # Module 옵션 업데이트
+            if 'Module' in self.merged_df.columns:
+                modules = sorted(self.merged_df['Module'].dropna().unique())
+                module_values = ["All"] + list(modules)
+                if hasattr(self, 'comparison_module_filter_combo'):
+                    self.comparison_module_filter_combo['values'] = module_values
+                    if not self.comparison_module_filter_var.get():
+                        self.comparison_module_filter_var.set("All")
+            
+            # Part 옵션 업데이트
+            if 'Part' in self.merged_df.columns:
+                parts = sorted(self.merged_df['Part'].dropna().unique())
+                part_values = ["All"] + list(parts)
+                if hasattr(self, 'comparison_part_filter_combo'):
+                    self.comparison_part_filter_combo['values'] = part_values
+                    if not self.comparison_part_filter_var.get():
+                        self.comparison_part_filter_var.set("All")
+                        
+        except Exception as e:
+            print(f"Comparison filter options update error: {e}")
+
+    def _show_comparison_statistics(self):
+        """비교 통계 표시 (엔지니어 기능)"""
+        try:
+            if not hasattr(self, 'merged_df') or self.merged_df is None:
+                messagebox.showinfo("정보", "비교할 데이터가 없습니다.")
+                return
+            
+            # 통계 계산
+            total_items = len(self.merged_df)
+            
+            # Module별 통계
+            module_stats = {}
+            if 'Module' in self.merged_df.columns:
+                module_stats = self.merged_df['Module'].value_counts().to_dict()
+            
+            # Part별 통계
+            part_stats = {}
+            if 'Part' in self.merged_df.columns:
+                part_stats = self.merged_df['Part'].value_counts().to_dict()
+            
+            # 통계 메시지 생성
+            stats_msg = f"📊 DB 비교 통계\n\n"
+            stats_msg += f"전체 항목 수: {total_items}개\n\n"
+            
+            if module_stats:
+                stats_msg += "🔧 Module별 분포:\n"
+                for module, count in sorted(module_stats.items()):
+                    percentage = (count / total_items) * 100
+                    stats_msg += f"  • {module}: {count}개 ({percentage:.1f}%)\n"
+                stats_msg += "\n"
+            
+            if part_stats:
+                stats_msg += "⚙️ Part별 분포:\n"
+                for part, count in sorted(part_stats.items()):
+                    percentage = (count / total_items) * 100
+                    stats_msg += f"  • {part}: {count}개 ({percentage:.1f}%)\n"
+            
+            messagebox.showinfo("비교 통계", stats_msg)
+            
+        except Exception as e:
+            messagebox.showerror("오류", f"통계 표시 중 오류 발생: {e}")
+
+    def _export_comparison_data(self):
+        """비교 데이터 내보내기 (엔지니어 기능)"""
+        try:
+            if not hasattr(self, 'merged_df') or self.merged_df is None:
+                messagebox.showinfo("정보", "내보낼 데이터가 없습니다.")
+                return
+            
+            from tkinter import filedialog
+            
+            # 파일 저장 대화상자
+            filename = filedialog.asksaveasfilename(
+                title="비교 데이터 내보내기",
+                defaultextension=".xlsx",
+                filetypes=[
+                    ("Excel files", "*.xlsx"),
+                    ("CSV files", "*.csv"),
+                    ("All files", "*.*")
+                ]
+            )
+            
+            if filename:
+                if filename.endswith('.xlsx'):
+                    self.merged_df.to_excel(filename, index=False)
+                else:
+                    self.merged_df.to_csv(filename, index=False, encoding='utf-8-sig')
+                
+                messagebox.showinfo("완료", f"데이터가 성공적으로 내보내졌습니다:\n{filename}")
+                
+        except Exception as e:
+            messagebox.showerror("오류", f"데이터 내보내기 중 오류 발생: {e}")
 
     def add_to_default_db(self):
         """체크된 항목들을 Default DB로 전송 - 중복도 기반 통계 분석"""
@@ -2516,19 +2770,45 @@ class DBManager:
         search_frame = ttk.Frame(top_frame)
         search_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        ttk.Label(search_frame, text="ItemName 검색:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(search_frame, text="🔎 Search:", font=('Segoe UI', 9)).pack(side=tk.LEFT, padx=(0, 5))
         
         self.search_var = tk.StringVar()
         self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=25)
         self.search_entry.pack(side=tk.LEFT, padx=(0, 5))
         self.search_entry.bind('<KeyRelease>', self.on_search_changed)
         
-        self.search_clear_btn = ttk.Button(search_frame, text="지우기", command=self.clear_search, width=8)
+        self.search_clear_btn = ttk.Button(search_frame, text="Clear", command=self.clear_search, width=8)
         self.search_clear_btn.pack(side=tk.LEFT, padx=(0, 10))
         
         # 검색 결과 정보
-        self.search_result_label = ttk.Label(search_frame, text="", foreground="blue")
+        self.search_result_label = ttk.Label(search_frame, text="", foreground="#1976D2", font=('Segoe UI', 8))
         self.search_result_label.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 필터 컨트롤을 같은 행에 추가
+        # 필터 컨트롤 영역
+        self.comparison_advanced_filter_visible = tk.BooleanVar(value=False)
+        
+        control_frame = ttk.Frame(search_frame)
+        control_frame.pack(side=tk.RIGHT, padx=(10, 0))
+        
+        # 결과 표시 레이블
+        self.comparison_filter_result_label = ttk.Label(control_frame, text="", foreground="#1976D2", font=('Segoe UI', 8))
+        self.comparison_filter_result_label.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Advanced Filter 토글 버튼
+        self.comparison_toggle_advanced_btn = ttk.Button(
+            control_frame, 
+            text="▼ Filters", 
+            command=self._toggle_comparison_advanced_filters
+        )
+        self.comparison_toggle_advanced_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Reset 버튼
+        filter_reset_btn = ttk.Button(control_frame, text="Reset", command=self._reset_comparison_filters)
+        filter_reset_btn.pack(side=tk.LEFT)
+        
+        # 고급 필터 패널 생성
+        self._create_comparison_filter_panel(comparison_frame)
         
         control_frame = ttk.Frame(comparison_frame)
         control_frame.pack(fill=tk.X, padx=5, pady=5)
@@ -2586,6 +2866,234 @@ class DBManager:
         if not self.maint_mode:
             self.update_comparison_context_menu_state()
         self.update_comparison_view()
+
+    def _create_comparison_filter_panel(self, parent_frame):
+        """전체 목록 탭 필터 패널 생성 - 고급 필터만 생성"""
+        try:
+            # 메인 필터 컨테이너 프레임 (parent_frame에 직접 배치)
+            self.comparison_main_filter_container = ttk.Frame(parent_frame)
+            self.comparison_main_filter_container.pack(fill=tk.X, pady=(0, 5), padx=10)
+            
+            # 구분선 추가
+            separator = ttk.Separator(self.comparison_main_filter_container, orient='horizontal')
+            separator.pack(fill=tk.X, pady=(5, 8))
+            
+            # 고급 필터 패널 (메인 컨테이너 내부에 배치, 처음에는 숨김)
+            self.comparison_advanced_filter_frame = ttk.Frame(self.comparison_main_filter_container)
+            
+            # 고급 필터 내용 생성 (아직 보이지 않음)
+            self._create_comparison_advanced_filters()
+            
+            # 초기 상태는 숨겨진 상태로 설정
+            print("Filter panel created - advanced filter hidden by default")
+            
+        except Exception as e:
+            print(f"Comparison filter panel error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _create_comparison_advanced_filters(self):
+        """전체 목록 탭 고급 필터 생성 - Module, Part만 포함 (Data Type 제외)"""
+        try:
+            # 구분선
+            filter_separator = ttk.Separator(self.comparison_advanced_filter_frame, orient='horizontal')
+            filter_separator.pack(fill=tk.X, pady=(5, 8))
+            
+            # 필터 행 - 엔지니어 스타일 단일 행 레이아웃
+            filters_row = ttk.Frame(self.comparison_advanced_filter_frame)
+            filters_row.pack(fill=tk.X, pady=(0, 8))
+            
+            # Module Filter
+            module_frame = ttk.Frame(filters_row)
+            module_frame.pack(side=tk.LEFT, padx=(0, 20))
+            
+            ttk.Label(module_frame, text="Module:", font=('Segoe UI', 8)).pack(anchor='w')
+            self.comparison_module_filter_var = tk.StringVar()
+            self.comparison_module_filter_combo = ttk.Combobox(module_frame, textvariable=self.comparison_module_filter_var, 
+                                                      state="readonly", width=12, font=('Segoe UI', 8))
+            self.comparison_module_filter_combo.pack()
+            self.comparison_module_filter_combo.bind('<<ComboboxSelected>>', self._apply_comparison_filters)
+            
+            # Part Filter
+            part_frame = ttk.Frame(filters_row)
+            part_frame.pack(side=tk.LEFT, padx=(0, 20))
+            
+            ttk.Label(part_frame, text="Part:", font=('Segoe UI', 8)).pack(anchor='w')
+            self.comparison_part_filter_var = tk.StringVar()
+            self.comparison_part_filter_combo = ttk.Combobox(part_frame, textvariable=self.comparison_part_filter_var, 
+                                                    state="readonly", width=12, font=('Segoe UI', 8))
+            self.comparison_part_filter_combo.pack()
+            self.comparison_part_filter_combo.bind('<<ComboboxSelected>>', self._apply_comparison_filters)
+            
+            # 엔지니어 관리 버튼들 (QC 모드에서만 표시)
+            if hasattr(self, 'maint_mode') and self.maint_mode:
+                engineer_frame = ttk.Frame(filters_row)
+                engineer_frame.pack(side=tk.LEFT, padx=(30, 0))
+                
+                ttk.Button(engineer_frame, text="📊 비교 통계", command=self._show_comparison_statistics).pack(side=tk.LEFT, padx=(0, 5))
+                ttk.Button(engineer_frame, text="📤 데이터 내보내기", command=self._export_comparison_data).pack(side=tk.LEFT)
+            
+        except Exception as e:
+            print(f"Comparison advanced filters error: {e}")
+
+    def _toggle_comparison_advanced_filters(self):
+        """전체 목록 탭 고급 필터 토글"""
+        try:
+            print(f"Toggle called - Current state: {self.comparison_advanced_filter_visible.get()}")
+            
+            if self.comparison_advanced_filter_visible.get():
+                # 현재 보이는 상태 → 숨기기
+                print("Hiding advanced filters")
+                self.comparison_advanced_filter_frame.pack_forget()
+                self.comparison_toggle_advanced_btn.config(text="▼ Filters")
+                self.comparison_advanced_filter_visible.set(False)
+            else:
+                # 현재 숨겨진 상태 → 보이기
+                print("Showing advanced filters")
+                self.comparison_advanced_filter_frame.pack(fill=tk.X, pady=(0, 5))
+                self.comparison_toggle_advanced_btn.config(text="▲ Filters")
+                self.comparison_advanced_filter_visible.set(True)
+                
+            # UI 업데이트 강제 실행
+            if hasattr(self, 'comparison_main_filter_container'):
+                self.comparison_main_filter_container.update_idletasks()
+            if hasattr(self, 'window'):
+                self.window.update_idletasks()
+            
+            print(f"Toggle complete - New state: {self.comparison_advanced_filter_visible.get()}")
+            
+        except Exception as e:
+            print(f"Filter toggle error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _apply_comparison_filters(self, *args):
+        """전체 목록 탭 필터 적용"""
+        try:
+            # 기존 검색 필터와 함께 Module, Part 필터 적용
+            self.on_search_changed()
+            
+        except Exception as e:
+            print(f"Comparison filters apply error: {e}")
+
+    def _reset_comparison_filters(self):
+        """전체 목록 탭 모든 필터 초기화"""
+        try:
+            # 검색 초기화
+            if hasattr(self, 'search_var'):
+                self.search_var.set("")
+            
+            # 필터 초기화
+            if hasattr(self, 'comparison_module_filter_var'):
+                self.comparison_module_filter_var.set("All")
+            if hasattr(self, 'comparison_part_filter_var'):
+                self.comparison_part_filter_var.set("All")
+            
+            # 필터 적용
+            self._apply_comparison_filters()
+            
+        except Exception as e:
+            print(f"Comparison filters reset error: {e}")
+
+    def _update_comparison_filter_options(self):
+        """전체 목록 탭 필터 옵션 업데이트"""
+        try:
+            if not hasattr(self, 'merged_df') or self.merged_df is None:
+                return
+                
+            # Module 옵션 업데이트
+            if 'Module' in self.merged_df.columns:
+                modules = sorted(self.merged_df['Module'].dropna().unique())
+                module_values = ["All"] + list(modules)
+                if hasattr(self, 'comparison_module_filter_combo'):
+                    self.comparison_module_filter_combo['values'] = module_values
+                    if not self.comparison_module_filter_var.get():
+                        self.comparison_module_filter_var.set("All")
+            
+            # Part 옵션 업데이트
+            if 'Part' in self.merged_df.columns:
+                parts = sorted(self.merged_df['Part'].dropna().unique())
+                part_values = ["All"] + list(parts)
+                if hasattr(self, 'comparison_part_filter_combo'):
+                    self.comparison_part_filter_combo['values'] = part_values
+                    if not self.comparison_part_filter_var.get():
+                        self.comparison_part_filter_var.set("All")
+                        
+        except Exception as e:
+            print(f"Comparison filter options update error: {e}")
+
+    def _show_comparison_statistics(self):
+        """비교 통계 표시 (엔지니어 기능)"""
+        try:
+            if not hasattr(self, 'merged_df') or self.merged_df is None:
+                messagebox.showinfo("정보", "비교할 데이터가 없습니다.")
+                return
+            
+            # 통계 계산
+            total_items = len(self.merged_df)
+            
+            # Module별 통계
+            module_stats = {}
+            if 'Module' in self.merged_df.columns:
+                module_stats = self.merged_df['Module'].value_counts().to_dict()
+            
+            # Part별 통계
+            part_stats = {}
+            if 'Part' in self.merged_df.columns:
+                part_stats = self.merged_df['Part'].value_counts().to_dict()
+            
+            # 통계 메시지 생성
+            stats_msg = f"📊 DB 비교 통계\n\n"
+            stats_msg += f"전체 항목 수: {total_items}개\n\n"
+            
+            if module_stats:
+                stats_msg += "🔧 Module별 분포:\n"
+                for module, count in sorted(module_stats.items()):
+                    percentage = (count / total_items) * 100
+                    stats_msg += f"  • {module}: {count}개 ({percentage:.1f}%)\n"
+                stats_msg += "\n"
+            
+            if part_stats:
+                stats_msg += "⚙️ Part별 분포:\n"
+                for part, count in sorted(part_stats.items()):
+                    percentage = (count / total_items) * 100
+                    stats_msg += f"  • {part}: {count}개 ({percentage:.1f}%)\n"
+            
+            messagebox.showinfo("비교 통계", stats_msg)
+            
+        except Exception as e:
+            messagebox.showerror("오류", f"통계 표시 중 오류 발생: {e}")
+
+    def _export_comparison_data(self):
+        """비교 데이터 내보내기 (엔지니어 기능)"""
+        try:
+            if not hasattr(self, 'merged_df') or self.merged_df is None:
+                messagebox.showinfo("정보", "내보낼 데이터가 없습니다.")
+                return
+            
+            from tkinter import filedialog
+            
+            # 파일 저장 대화상자
+            filename = filedialog.asksaveasfilename(
+                title="비교 데이터 내보내기",
+                defaultextension=".xlsx",
+                filetypes=[
+                    ("Excel files", "*.xlsx"),
+                    ("CSV files", "*.csv"),
+                    ("All files", "*.*")
+                ]
+            )
+            
+            if filename:
+                if filename.endswith('.xlsx'):
+                    self.merged_df.to_excel(filename, index=False)
+                else:
+                    self.merged_df.to_csv(filename, index=False, encoding='utf-8-sig')
+                
+                messagebox.showinfo("완료", f"데이터가 성공적으로 내보내졌습니다:\n{filename}")
+                
+        except Exception as e:
+            messagebox.showerror("오류", f"데이터 내보내기 중 오류 발생: {e}")
 
     def add_to_default_db(self):
         """체크된 항목들을 Default DB로 전송 - 중복도 기반 통계 분석"""
@@ -3168,6 +3676,18 @@ class DBManager:
                 if search_filter and search_filter not in item_name.lower():
                     continue
                 
+                # Module 필터링 적용
+                if hasattr(self, 'comparison_module_filter_var'):
+                    module_filter = self.comparison_module_filter_var.get()
+                    if module_filter and module_filter != "All" and module != module_filter:
+                        continue
+                
+                # Part 필터링 적용
+                if hasattr(self, 'comparison_part_filter_var'):
+                    part_filter = self.comparison_part_filter_var.get()
+                    if part_filter and part_filter != "All" and part != part_filter:
+                        continue
+                
                 filtered_items += 1
                 
                 values = []
@@ -3229,6 +3749,21 @@ class DBManager:
                 self.search_result_label.config(text=f"검색 결과: {filtered_items}개 (전체: {total_items}개)")
             else:
                 self.search_result_label.config(text="")
+        
+        # 필터 옵션 업데이트
+        if hasattr(self, '_update_comparison_filter_options'):
+            self._update_comparison_filter_options()
+        
+        # 필터 결과 표시 업데이트
+        if hasattr(self, 'comparison_filter_result_label'):
+            # Module/Part 필터가 적용된 경우 결과 표시
+            module_filter = getattr(self, 'comparison_module_filter_var', tk.StringVar()).get()
+            part_filter = getattr(self, 'comparison_part_filter_var', tk.StringVar()).get()
+            
+            if (module_filter and module_filter != "All") or (part_filter and part_filter != "All"):
+                self.comparison_filter_result_label.config(text=f"필터 결과: {filtered_items}/{total_items} 항목")
+            else:
+                self.comparison_filter_result_label.config(text="")
 
     def create_comparison_context_menu(self):
         self.comparison_context_menu = tk.Menu(self.window, tearoff=0)
