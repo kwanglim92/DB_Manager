@@ -1,4 +1,4 @@
-# Enhanced QC 기능 - Performance 모드 및 파일 선택 지원
+# Enhanced QC 기능 - Check list 모드 및 파일 선택 지원
 
 import os
 import tkinter as tk
@@ -8,12 +8,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from datetime import datetime
-from app.loading import LoadingDialog
-from app.utils import create_treeview_with_scrollbar
-from app.schema import DBSchema
+from .loading import LoadingDialog
+from .utils import create_treeview_with_scrollbar
+from .schema import DBSchema
 
 class EnhancedQCValidator:
-    """향상된 QC 검증 클래스 - Performance 모드 지원"""
+    """향상된 QC 검증 클래스 - Check list 모드 지원"""
 
     SEVERITY_LEVELS = {
         "높음": 3,
@@ -23,43 +23,43 @@ class EnhancedQCValidator:
 
     ISSUE_TYPES = {
         "data_quality": "데이터 품질",
-        "performance": "Performance 관련",
+        "checklist": "Check list 관련",
         "consistency": "일관성",
         "completeness": "완전성",
         "accuracy": "정확성"
     }
 
     @staticmethod
-    def check_performance_parameters(df, equipment_type):
-        """Performance 파라미터 특별 검사"""
+    def check_checklist_parameters(df, equipment_type):
+        """Check list 파라미터 특별 검사"""
         results = []
         
-        if 'is_performance' in df.columns:
-            performance_params = df[df['is_performance'] == 1]
+        if 'is_checklist' in df.columns:
+            checklist_params = df[df['is_checklist'] == 1]
             
-            # Performance 파라미터의 신뢰도 검사 (더 엄격한 기준)
+            # Check list 파라미터의 신뢰도 검사 (더 엄격한 기준)
             if 'confidence_score' in df.columns:
-                low_perf_confidence = performance_params[performance_params['confidence_score'] < 0.8]
-                for _, row in low_perf_confidence.iterrows():
+                low_checklist_confidence = checklist_params[checklist_params['confidence_score'] < 0.8]
+                for _, row in low_checklist_confidence.iterrows():
                     results.append({
                         "parameter": row['parameter_name'],
-                        "issue_type": "Performance 신뢰도 부족",
-                        "description": f"Performance 중요 파라미터의 신뢰도가 {row['confidence_score']*100:.1f}%로 낮습니다 (권장: 80% 이상)",
+                        "issue_type": "Check list 신뢰도 부족",
+                        "description": f"Check list 중요 파라미터의 신뢰도가 {row['confidence_score']*100:.1f}%로 낮습니다 (권장: 80% 이상)",
                         "severity": "높음",
-                        "category": "performance",
+                        "category": "checklist",
                         "recommendation": "더 많은 소스 파일에서 확인하거나 수동 검증이 필요합니다."
                     })
             
-            # Performance 파라미터의 사양 범위 누락 검사
-            missing_specs = performance_params[
-                (performance_params['min_spec'].isna() | (performance_params['min_spec'] == '')) |
-                (performance_params['max_spec'].isna() | (performance_params['max_spec'] == ''))
+            # Check list 파라미터의 사양 범위 누락 검사
+            missing_specs = checklist_params[
+                (checklist_params['min_spec'].isna() | (checklist_params['min_spec'] == '')) |
+                (checklist_params['max_spec'].isna() | (checklist_params['max_spec'] == ''))
             ]
             for _, row in missing_specs.iterrows():
                 results.append({
                     "parameter": row['parameter_name'],
-                    "issue_type": "Performance 사양 누락",
-                    "description": f"Performance 중요 파라미터에 사양 범위(min/max)가 누락되었습니다",
+                    "issue_type": "Check list 사양 누락",
+                    "description": f"Check list 중요 파라미터에 사양 범위(min/max)가 누락되었습니다",
                     "severity": "높음",
                     "category": "completeness",
                     "recommendation": "장비 매뉴얼을 참조하여 사양 범위를 추가하세요."
@@ -106,60 +106,6 @@ class EnhancedQCValidator:
         
         return results
 
-    @staticmethod
-    def check_naming_conventions(df, equipment_type):
-        """파라미터 명명 규칙 검사 - 새로운 고급 검사"""
-        results = []
-        
-        if 'parameter_name' in df.columns:
-            param_names = df['parameter_name'].dropna()
-            
-            # 특수 문자 사용 검사
-            special_char_params = param_names[param_names.str.contains(r'[^a-zA-Z0-9_\-\.]', na=False)]
-            for param in special_char_params:
-                results.append({
-                    "parameter": param,
-                    "issue_type": "명명 규칙 위반",
-                    "description": f"파라미터명에 허용되지 않는 특수문자가 포함되어 있습니다",
-                    "severity": "중간",
-                    "category": "consistency",
-                    "recommendation": "영문, 숫자, 언더스코어(_), 하이픈(-), 점(.)만 사용하세요."
-                })
-            
-            # 너무 긴 파라미터명 검사
-            long_name_params = param_names[param_names.str.len() > 50]
-            for param in long_name_params:
-                results.append({
-                    "parameter": param,
-                    "issue_type": "파라미터명 길이 초과",
-                    "description": f"파라미터명이 {len(param)}자로 너무 깁니다 (권장: 50자 이하)",
-                    "severity": "낮음",
-                    "category": "consistency",
-                    "recommendation": "파라미터명을 간결하게 줄이세요."
-                })
-            
-            # 대소문자 일관성 검사
-            inconsistent_case = []
-            param_lower = param_names.str.lower()
-            for i, param in enumerate(param_names):
-                similar_params = param_lower[param_lower == param.lower()]
-                if len(similar_params) > 1:
-                    original_params = param_names[param_lower == param.lower()]
-                    if len(set(original_params)) > 1:  # 대소문자만 다른 경우
-                        inconsistent_case.extend(original_params.tolist())
-            
-            if inconsistent_case:
-                unique_inconsistent = list(set(inconsistent_case))
-                results.append({
-                    "parameter": "전체",
-                    "issue_type": "대소문자 불일치",
-                    "description": f"대소문자만 다른 유사한 파라미터들이 있습니다: {', '.join(unique_inconsistent[:3])}{'...' if len(unique_inconsistent) > 3 else ''}",
-                    "severity": "중간",
-                    "category": "consistency",
-                    "recommendation": "파라미터명의 대소문자 규칙을 통일하세요."
-                })
-        
-        return results
 
     @staticmethod
     def check_value_ranges(df, equipment_type):
@@ -205,11 +151,11 @@ class EnhancedQCValidator:
         return results
 
     @staticmethod
-    def run_enhanced_checks(df, equipment_type, is_performance_mode=False):
-        """향상된 QC 검사 실행"""
-        from app.qc import QCValidator
+    def run_enhanced_checks(df, equipment_type, is_checklist_mode=False):
+        """간소화된 QC 검사 실행 - 검수 모드에 따라 필요한 검사만 수행"""
+        from .qc import QCValidator
         
-        # 기본 검사 실행
+        # 기본 검사 실행 (누락 파라미터, 값 차이 등)
         all_results = QCValidator.run_all_checks(df, equipment_type)
         
         # 기존 결과에 category와 recommendation 추가
@@ -219,12 +165,16 @@ class EnhancedQCValidator:
             if 'recommendation' not in result:
                 result['recommendation'] = '상세 검토가 필요합니다.'
         
-        # 향상된 검사들 실행
+        # 검수 모드에 따른 추가 검사
         enhanced_results = []
-        enhanced_results.extend(EnhancedQCValidator.check_performance_parameters(df, equipment_type))
-        enhanced_results.extend(EnhancedQCValidator.check_data_trends(df, equipment_type))
-        enhanced_results.extend(EnhancedQCValidator.check_naming_conventions(df, equipment_type))
-        enhanced_results.extend(EnhancedQCValidator.check_value_ranges(df, equipment_type))
+        
+        if is_checklist_mode:
+            # Check list 모드: Check list 파라미터 특별 검사만 수행
+            enhanced_results.extend(EnhancedQCValidator.check_checklist_parameters(df, equipment_type))
+        else:
+            # 전체 검수 모드: 모든 향상된 검사 수행
+            enhanced_results.extend(EnhancedQCValidator.check_checklist_parameters(df, equipment_type))
+            enhanced_results.extend(EnhancedQCValidator.check_data_trends(df, equipment_type))
         
         # 결과 합치기
         all_results.extend(enhanced_results)
@@ -314,58 +264,37 @@ def add_enhanced_qc_functions_to_class(cls):
 
         # 검수 모드 선택
         ttk.Label(row1, text="🔍 검수 모드:", font=('Arial', 9, 'bold')).pack(side=tk.LEFT, padx=(0, 5))
-        self.qc_mode_var = tk.StringVar(value="performance")
+        self.qc_mode_var = tk.StringVar(value="checklist")
         
-        performance_radio = ttk.Radiobutton(row1, text="⚡ Performance 중점", 
-                                          variable=self.qc_mode_var, value="performance")
-        performance_radio.pack(side=tk.LEFT, padx=(0, 10))
+        checklist_radio = ttk.Radiobutton(row1, text="⭐ Check list 중점", 
+                                          variable=self.qc_mode_var, value="checklist")
+        checklist_radio.pack(side=tk.LEFT, padx=(0, 10))
         
         full_radio = ttk.Radiobutton(row1, text="📋 전체 검수", 
                                    variable=self.qc_mode_var, value="full")
         full_radio.pack(side=tk.LEFT, padx=(0, 10))
-
-        # 두 번째 행: 검수 옵션 및 실행 버튼
+        
+        # 두 번째 행: 실행 버튼
         row2 = ttk.Frame(control_panel)
         row2.pack(fill=tk.X, pady=(5, 0))
-
-        # 검수 옵션
-        options_frame = ttk.LabelFrame(row2, text="🔧 검수 옵션", padding=10)
-        options_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 15))
-
-        self.qc_options = {
-            'check_performance': tk.BooleanVar(value=True),
-            'check_naming': tk.BooleanVar(value=True),
-            'check_ranges': tk.BooleanVar(value=True),
-            'check_trends': tk.BooleanVar(value=False)
-        }
-
-        ttk.Checkbutton(options_frame, text="Performance 중점 검사", 
-                       variable=self.qc_options['check_performance']).pack(anchor='w')
-        ttk.Checkbutton(options_frame, text="명명 규칙 검사", 
-                       variable=self.qc_options['check_naming']).pack(anchor='w')
-        ttk.Checkbutton(options_frame, text="값 범위 분석", 
-                       variable=self.qc_options['check_ranges']).pack(anchor='w')
-        ttk.Checkbutton(options_frame, text="데이터 트렌드 분석", 
-                       variable=self.qc_options['check_trends']).pack(anchor='w')
 
         # 실행 버튼 영역
         action_frame = ttk.Frame(row2)
         action_frame.pack(side=tk.RIGHT, fill=tk.Y)
-
-        # 메인 QC 실행 버튼
-        qc_btn = ttk.Button(action_frame, text="🚀 QC 검수 실행", 
-                           command=self.perform_enhanced_qc_check)
-        qc_btn.pack(pady=(0, 5))
 
         # 파일 선택 버튼
         file_select_btn = ttk.Button(action_frame, text="📁 검수 파일 선택", 
                                    command=self.select_qc_files)
         file_select_btn.pack(pady=(0, 5))
 
+        # 메인 QC 실행 버튼
+        self.qc_btn = ttk.Button(action_frame, text="🚀 QC 검수 실행", 
+                                command=self.perform_enhanced_qc_check)
+        self.qc_btn.pack(pady=(0, 5))
+
         # 결과 내보내기 버튼
-        export_btn = ttk.Button(action_frame, text="📤 결과 내보내기", 
-                              command=self.export_enhanced_qc_results)
-        export_btn.pack()
+        ttk.Button(action_frame, text="📤 Excel 내보내기", 
+                  command=self.export_qc_results_simple).pack(pady=(5, 0))
 
         # 🎨 메인 결과 영역 - 탭 구조로 개선
         main_frame = ttk.Frame(qc_tab)
@@ -427,6 +356,9 @@ def add_enhanced_qc_functions_to_class(cls):
 
         self.qc_progress = ttk.Progressbar(status_frame, mode='determinate', length=200)
         self.qc_progress.pack(side=tk.RIGHT, padx=(10, 0))
+        
+        # 초기 데이터 로드
+        self.load_equipment_types_for_qc()
     
     def select_qc_files(self):
         """QC 검수를 위한 파일 선택 (업로드된 파일 중에서 선택)"""
@@ -645,7 +577,7 @@ def add_enhanced_qc_functions_to_class(cls):
             self.update_log(f"❌ {error_msg}")
 
     def perform_enhanced_qc_check(self):
-        """향상된 QC 검수 실행 (Performance 모드 지원)"""
+        """향상된 QC 검수 실행 (Check list 모드 지원)"""
         selected_type = self.qc_type_var.get()
         qc_mode = getattr(self, 'qc_mode_var', None)
         
@@ -679,20 +611,20 @@ def add_enhanced_qc_functions_to_class(cls):
                 messagebox.showwarning("경고", f"장비 유형 '{selected_type}'의 ID를 찾을 수 없습니다.")
                 return
             
-            # Performance 모드 확인
-            is_performance_mode = qc_mode.get() == "performance" if qc_mode else False
+            # Check list 모드 확인
+            is_checklist_mode = qc_mode.get() == "checklist" if qc_mode else False
             
             # DB 스키마 인스턴스를 통해 데이터 로드
             if hasattr(self, 'db_schema') and self.db_schema:
-                data = self.db_schema.get_default_values(equipment_type_id, performance_only=is_performance_mode)
+                data = self.db_schema.get_default_values(equipment_type_id, checklist_only=is_checklist_mode)
             else:
-                from app.schema import DBSchema
+                from .schema import DBSchema
                 db_schema = DBSchema()
-                data = db_schema.get_default_values(equipment_type_id, performance_only=is_performance_mode)
+                data = db_schema.get_default_values(equipment_type_id, checklist_only=is_checklist_mode)
 
             if not data:
                 loading_dialog.close()
-                mode_text = "Performance 항목" if is_performance_mode else "전체 항목"
+                mode_text = "Check list 항목" if is_checklist_mode else "전체 항목"
                 messagebox.showinfo("알림", f"장비 유형 '{selected_type}'에 대한 {mode_text} 검수할 데이터가 없습니다.")
                 self.qc_status_label.config(text="📋 QC 검수 대기 중...", foreground='blue')
                 self.qc_progress.config(value=0)
@@ -705,14 +637,14 @@ def add_enhanced_qc_functions_to_class(cls):
             df = pd.DataFrame(data, columns=[
                 "id", "parameter_name", "default_value", "min_spec", "max_spec", "type_name",
                 "occurrence_count", "total_files", "confidence_score", "source_files", "description",
-                "module_name", "part_name", "item_type", "is_performance"
+                "module_name", "part_name", "item_type", "is_checklist"
             ])
 
             # 향상된 QC 검사 실행
             loading_dialog.update_progress(50, "향상된 QC 검사 실행 중...")
             self.qc_progress.config(value=50)
             
-            results = EnhancedQCValidator.run_enhanced_checks(df, selected_type, is_performance_mode=is_performance_mode)
+            results = EnhancedQCValidator.run_enhanced_checks(df, selected_type, is_checklist_mode=is_checklist_mode)
 
             # 결과 트리뷰에 표시
             loading_dialog.update_progress(75, "결과 업데이트 중...")
@@ -745,14 +677,14 @@ def add_enhanced_qc_functions_to_class(cls):
             loading_dialog.update_progress(90, "통계 정보 생성 중...")
             self.qc_progress.config(value=90)
             
-            self.show_enhanced_qc_statistics(results, is_performance_mode)
+            self.show_enhanced_qc_statistics(results, is_checklist_mode)
 
             # 완료
             loading_dialog.update_progress(100, "완료")
             loading_dialog.close()
             
             # 상태 업데이트
-            mode_text = "Performance 중점" if is_performance_mode else "전체"
+            mode_text = "Check list 중점" if is_checklist_mode else "전체"
             self.qc_status_label.config(
                 text=f"✅ QC 검수 완료 ({mode_text}) - {len(results)}개 이슈 발견", 
                 foreground='green'
@@ -774,7 +706,62 @@ def add_enhanced_qc_functions_to_class(cls):
             self.qc_status_label.config(text="❌ QC 검수 실패", foreground='red')
             self.qc_progress.config(value=0)
 
-    def show_enhanced_qc_statistics(self, results, is_performance_mode=False):
+    def export_qc_results_simple(self):
+        """간단한 QC 결과 Excel 내보내기"""
+        try:
+            # 검수 결과가 있는지 확인
+            if not self.qc_result_tree.get_children():
+                messagebox.showwarning("알림", "먼저 QC 검수를 실행해주세요.")
+                return
+            
+            # 파일 저장 대화상자
+            from tkinter import filedialog
+            file_path = filedialog.asksaveasfilename(
+                title="QC 검수 결과 저장",
+                defaultextension=".xlsx",
+                filetypes=[("Excel 파일", "*.xlsx"), ("CSV 파일", "*.csv")]
+            )
+            
+            if not file_path:
+                return
+            
+            # 트리뷰에서 결과 데이터 수집
+            results = []
+            for item in self.qc_result_tree.get_children():
+                values = self.qc_result_tree.item(item)['values']
+                results.append({
+                    'parameter': values[0],
+                    'issue_type': values[1],
+                    'description': values[2],
+                    'severity': values[3],
+                    'category': values[4],
+                    'recommendation': values[5]
+                })
+            
+            # 간단한 보고서 생성
+            from .qc_reports import export_qc_results_to_excel, export_qc_results_to_csv
+            
+            equipment_name = getattr(self, 'qc_type_var', tk.StringVar()).get() or "Unknown"
+            equipment_type = equipment_name
+            
+            success = False
+            if file_path.endswith('.xlsx'):
+                success = export_qc_results_to_excel(results, equipment_name, equipment_type, file_path)
+            elif file_path.endswith('.csv'):
+                success = export_qc_results_to_csv(results, equipment_name, equipment_type, file_path)
+            
+            if success:
+                messagebox.showinfo("성공", f"QC 검수 결과가 저장되었습니다.\n{file_path}")
+                self.update_log(f"[QC] 검수 결과를 '{file_path}'에 저장했습니다.")
+            else:
+                messagebox.showerror("오류", "결과 내보내기에 실패했습니다.")
+            
+        except Exception as e:
+            error_msg = f"결과 내보내기 중 오류: {str(e)}"
+            messagebox.showerror("오류", error_msg)
+            self.update_log(f"❌ {error_msg}")
+
+    def show_enhanced_qc_statistics(self, results, is_checklist_mode=False):
         """향상된 QC 통계 정보 표시"""
         # 통계 요약 생성
         summary = EnhancedQCValidator.generate_qc_summary(results)
@@ -822,7 +809,7 @@ def add_enhanced_qc_functions_to_class(cls):
 
         # 🎨 시각화 차트들
         if results:
-            self.create_enhanced_charts(summary, is_performance_mode)
+            self.create_enhanced_charts(summary, is_checklist_mode)
 
         # 권장사항 표시 (하단)
         if summary['recommendations']:
@@ -833,7 +820,7 @@ def add_enhanced_qc_functions_to_class(cls):
                 ttk.Label(recommendations_frame, text=f"{i}. {rec}", 
                          font=('Arial', 9), wraplength=400).pack(anchor='w', pady=2)
 
-    def create_enhanced_charts(self, summary, is_performance_mode=False):
+    def create_enhanced_charts(self, summary, is_checklist_mode=False):
         """향상된 차트 생성"""
         try:
             # matplotlib 한글 폰트 설정
@@ -895,7 +882,7 @@ def add_enhanced_qc_functions_to_class(cls):
                     fontweight='bold', fontsize=12, color='white')
             
             # 4. 성능 모드 정보 (텍스트)
-            mode_text = "Performance 중점 검수" if is_performance_mode else "전체 항목 검수"
+            mode_text = "Check list 중점 검수" if is_checklist_mode else "전체 항목 검수"
             total_issues = summary['total_issues']
             
             info_text = f"""검수 모드: {mode_text}
@@ -928,80 +915,367 @@ def add_enhanced_qc_functions_to_class(cls):
                                   font=('Arial', 10), foreground='red')
             error_label.pack(pady=20)
 
-    def export_enhanced_qc_results(self):
-        """향상된 QC 결과 내보내기"""
+    def _create_new_template(self):
+        """새 QC 템플릿 생성"""
         try:
-            # 결과가 있는지 확인
-            if not self.qc_result_tree.get_children():
-                messagebox.showinfo("알림", "내보낼 QC 검수 결과가 없습니다.")
-                return
+            from .qc_templates import QCTemplate, QCCheckOptions
             
-            # 파일 저장 대화상자
-            file_path = filedialog.asksaveasfilename(
-                title="QC 검수 결과 저장",
-                defaultextension=".xlsx",
-                filetypes=[
-                    ("Excel 파일", "*.xlsx"),
-                    ("CSV 파일", "*.csv"),
-                    ("모든 파일", "*.*")
-                ]
-            )
+            # 템플릿 생성 다이얼로그
+            dialog = tk.Toplevel(self.window)
+            dialog.title("새 QC 템플릿 생성")
+            dialog.geometry("500x600")
+            dialog.transient(self.window)
+            dialog.grab_set()
             
-            if not file_path:
-                return
+            # 기본 정보 입력
+            info_frame = ttk.LabelFrame(dialog, text="기본 정보", padding=10)
+            info_frame.pack(fill=tk.X, padx=10, pady=5)
             
-            # 트리뷰 데이터 수집
-            results_data = []
-            for item in self.qc_result_tree.get_children():
-                values = self.qc_result_tree.item(item)['values']
-                results_data.append({
-                    '파라미터': values[0],
-                    '문제 유형': values[1],
-                    '상세 설명': values[2],
-                    '심각도': values[3],
-                    '카테고리': values[4],
-                    '권장사항': values[5]
-                })
+            ttk.Label(info_frame, text="템플릿명:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+            name_var = tk.StringVar()
+            ttk.Entry(info_frame, textvariable=name_var, width=30).grid(row=0, column=1, padx=5, pady=5)
             
-            # 데이터프레임 생성
-            df = pd.DataFrame(results_data)
+            ttk.Label(info_frame, text="설명:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+            desc_var = tk.StringVar()
+            ttk.Entry(info_frame, textvariable=desc_var, width=30).grid(row=1, column=1, padx=5, pady=5)
             
-            # 파일 확장자에 따라 저장
-            if file_path.endswith('.xlsx'):
-                # Excel 파일로 저장 (요약 정보 포함)
-                with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-                    df.to_excel(writer, sheet_name='QC 검수 결과', index=False)
-                    
-                    # 요약 정보 시트 추가
-                    summary_data = {
-                        '항목': ['검수 일시', '장비 유형', '총 이슈 수', '높은 심각도', '중간 심각도', '낮은 심각도'],
-                        '값': [
-                            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            self.qc_type_var.get(),
-                            len(results_data),
-                            len([r for r in results_data if r['심각도'] == '높음']),
-                            len([r for r in results_data if r['심각도'] == '중간']),
-                            len([r for r in results_data if r['심각도'] == '낮음'])
-                        ]
-                    }
-                    summary_df = pd.DataFrame(summary_data)
-                    summary_df.to_excel(writer, sheet_name='검수 요약', index=False)
-            else:
-                # CSV 파일로 저장
-                df.to_csv(file_path, index=False, encoding='utf-8-sig')
+            ttk.Label(info_frame, text="타입:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+            type_var = tk.StringVar(value="custom")
+            type_combo = ttk.Combobox(info_frame, textvariable=type_var, 
+                                    values=["production", "qc", "custom"], state="readonly")
+            type_combo.grid(row=2, column=1, padx=5, pady=5)
             
-            messagebox.showinfo("성공", f"QC 검수 결과가 성공적으로 저장되었습니다.\n\n파일: {file_path}")
-            self.update_log(f"[Enhanced QC] QC 검수 결과를 '{file_path}'에 저장했습니다.")
+            ttk.Label(info_frame, text="심각도 모드:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
+            severity_var = tk.StringVar(value="standard")
+            severity_combo = ttk.Combobox(info_frame, textvariable=severity_var,
+                                        values=["strict", "standard", "lenient"], state="readonly")
+            severity_combo.grid(row=3, column=1, padx=5, pady=5)
+            
+            # 검수 옵션 선택
+            options_frame = ttk.LabelFrame(dialog, text="검수 옵션", padding=10)
+            options_frame.pack(fill=tk.X, padx=10, pady=5)
+            
+            option_vars = {
+                'check_checklist': tk.BooleanVar(value=True),
+                'check_naming': tk.BooleanVar(value=True),
+                'check_ranges': tk.BooleanVar(value=True),
+                'check_trends': tk.BooleanVar(value=False),
+                'check_missing_values': tk.BooleanVar(value=True),
+                'check_outliers': tk.BooleanVar(value=True),
+                'check_duplicates': tk.BooleanVar(value=True),
+                'check_consistency': tk.BooleanVar(value=True)
+            }
+            
+            option_labels = {
+                'check_checklist': 'Check list 중점 검사',
+                'check_naming': '명명 규칙 검사',
+                'check_ranges': '값 범위 분석',
+                'check_trends': '데이터 트렌드 분석',
+                'check_missing_values': '누락값 검사',
+                'check_outliers': '이상치 검사',
+                'check_duplicates': '중복 검사',
+                'check_consistency': '일관성 검사'
+            }
+            
+            for i, (key, var) in enumerate(option_vars.items()):
+                ttk.Checkbutton(options_frame, text=option_labels[key], 
+                              variable=var).grid(row=i//2, column=i%2, sticky="w", padx=5, pady=2)
+            
+            # 버튼 영역
+            button_frame = ttk.Frame(dialog)
+            button_frame.pack(fill=tk.X, padx=10, pady=10)
+            
+            def save_template():
+                if not name_var.get():
+                    messagebox.showwarning("입력 오류", "템플릿명을 입력해주세요.")
+                    return
+                
+                # 템플릿 생성
+                check_options = QCCheckOptions(**{key: var.get() for key, var in option_vars.items()})
+                template = QCTemplate(
+                    template_name=name_var.get(),
+                    template_type=type_var.get(),
+                    description=desc_var.get(),
+                    severity_mode=severity_var.get(),
+                    check_options=check_options,
+                    created_by=getattr(self, 'current_user', 'Unknown')
+                )
+                
+                template_id = self.template_manager.create_template(template)
+                if template_id:
+                    messagebox.showinfo("성공", f"템플릿 '{name_var.get()}'이 생성되었습니다.")
+                    self._load_qc_templates()  # 템플릿 목록 새로고침
+                    dialog.destroy()
+                else:
+                    messagebox.showerror("오류", "템플릿 생성에 실패했습니다.")
+            
+            ttk.Button(button_frame, text="취소", command=dialog.destroy).pack(side=tk.RIGHT, padx=5)
+            ttk.Button(button_frame, text="저장", command=save_template).pack(side=tk.RIGHT)
             
         except Exception as e:
-            error_msg = f"QC 결과 내보내기 중 오류 발생: {str(e)}"
-            messagebox.showerror("오류", error_msg)
-            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("오류", f"템플릿 생성 다이얼로그 오류: {str(e)}")
+    
+    def _edit_template(self):
+        """기존 템플릿 편집"""
+        selected_template_name = self.qc_template_var.get()
+        
+        if selected_template_name == "기본 설정":
+            messagebox.showinfo("알림", "기본 설정은 편집할 수 없습니다.")
+            return
+        
+        template = self.template_mapping.get(selected_template_name)
+        if not template:
+            messagebox.showwarning("오류", "선택된 템플릿을 찾을 수 없습니다.")
+            return
+        
+        # 편집 다이얼로그 (생성과 유사하지만 기존 값으로 초기화)
+        messagebox.showinfo("구현 예정", "템플릿 편집 기능은 향후 구현 예정입니다.")
+    
+    def _export_template(self):
+        """템플릿 내보내기"""
+        selected_template_name = self.qc_template_var.get()
+        
+        if selected_template_name == "기본 설정":
+            messagebox.showinfo("알림", "기본 설정은 내보낼 수 없습니다.")
+            return
+        
+        template = self.template_mapping.get(selected_template_name)
+        if not template:
+            messagebox.showwarning("오류", "선택된 템플릿을 찾을 수 없습니다.")
+            return
+        
+        try:
+            from tkinter import filedialog
+            
+            file_path = filedialog.asksaveasfilename(
+                title="템플릿 내보내기",
+                defaultextension=".json",
+                filetypes=[("JSON 파일", "*.json"), ("모든 파일", "*.*")]
+            )
+            
+            if file_path:
+                if self.template_manager.export_template(template.id, file_path):
+                    messagebox.showinfo("성공", f"템플릿이 '{file_path}'로 내보내졌습니다.")
+                else:
+                    messagebox.showerror("오류", "템플릿 내보내기에 실패했습니다.")
+        
+        except Exception as e:
+            messagebox.showerror("오류", f"템플릿 내보내기 오류: {str(e)}")
+    
+    def perform_batch_qc_check(self):
+        """배치 QC 검수 실행"""
+        try:
+            from .batch_qc import BatchQCManager
+            
+            # 배치 검수 파일이 선택되었는지 확인
+            if not hasattr(self, 'selected_qc_files') or not self.selected_qc_files:
+                messagebox.showwarning("파일 선택", "배치 검수할 파일들을 먼저 선택해주세요.")
+                return
+            
+            # 배치 검수 세션 생성 다이얼로그
+            dialog = tk.Toplevel(self.window)
+            dialog.title("배치 QC 검수 설정")
+            dialog.geometry("400x300")
+            dialog.transient(self.window)
+            dialog.grab_set()
+            
+            # 세션 정보 입력
+            ttk.Label(dialog, text="세션명:").pack(pady=5)
+            session_name_var = tk.StringVar(value=f"Batch_QC_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+            ttk.Entry(dialog, textvariable=session_name_var, width=40).pack(pady=5)
+            
+            ttk.Label(dialog, text="검수자:").pack(pady=5)
+            inspector_var = tk.StringVar(value=getattr(self, 'current_user', 'Unknown'))
+            ttk.Entry(dialog, textvariable=inspector_var, width=40).pack(pady=5)
+            
+            ttk.Label(dialog, text=f"선택된 파일: {len(self.selected_qc_files)}개").pack(pady=10)
+            
+            # 배치 검수 실행
+            def start_batch():
+                try:
+                    manager = BatchQCManager(self.db_schema)
+                    session = manager.create_session(
+                        session_name_var.get(),
+                        inspector_var.get(),
+                        description="Enhanced QC에서 시작된 배치 검수"
+                    )
+                    
+                    # 파일들을 세션에 추가
+                    for filename, filepath in self.selected_qc_files.items():
+                        # 장비 타입 결정 (임시로 선택된 타입 사용)
+                        equipment_type_id = getattr(self, 'equipment_types_for_qc', {}).get(
+                            self.qc_type_var.get(), 1
+                        )
+                        session.add_item(filename, equipment_type_id, filepath)
+                    
+                    # 진행 상황 콜백 설정
+                    def progress_callback(progress, message):
+                        self.qc_progress.config(value=progress)
+                        self.qc_status_label.config(text=message)
+                        self.window.update_idletasks()
+                    
+                    def completion_callback(summary):
+                        self.qc_status_label.config(text=f"✅ 배치 검수 완료 - {summary['success_rate']:.1f}% 성공")
+                        self.qc_progress.config(value=100)
+                        messagebox.showinfo("완료", f"배치 검수가 완료되었습니다.\n성공률: {summary['success_rate']:.1f}%")
+                    
+                    session.set_callbacks(progress_callback, completion_callback)
+                    
+                    dialog.destroy()
+                    
+                    # 배치 검수 시작 (별도 스레드에서)
+                    import threading
+                    threading.Thread(target=lambda: session.start_batch_inspection(max_workers=3), 
+                                   daemon=True).start()
+                    
+                except Exception as e:
+                    messagebox.showerror("오류", f"배치 검수 시작 오류: {str(e)}")
+            
+            ttk.Button(dialog, text="시작", command=start_batch).pack(pady=10)
+            ttk.Button(dialog, text="취소", command=dialog.destroy).pack()
+            
+        except Exception as e:
+            messagebox.showerror("오류", f"배치 검수 오류: {str(e)}")
+    
+    def generate_qc_report(self):
+        """QC 보고서 생성"""
+        try:
+            from .qc_reports import QCReportGenerator
+            from tkinter import filedialog
+            
+            # 검수 결과가 있는지 확인
+            if not hasattr(self, 'last_qc_results') or not self.last_qc_results:
+                messagebox.showwarning("알림", "먼저 QC 검수를 실행해주세요.")
+                return
+            
+            # 보고서 생성 옵션 다이얼로그
+            dialog = tk.Toplevel(self.window)
+            dialog.title("QC 보고서 생성")
+            dialog.geometry("350x200")
+            dialog.transient(self.window)
+            dialog.grab_set()
+            
+            ttk.Label(dialog, text="보고서 유형:").pack(pady=5)
+            template_var = tk.StringVar(value="standard")
+            ttk.Combobox(dialog, textvariable=template_var, 
+                        values=["standard", "detailed", "summary", "customer"],
+                        state="readonly").pack(pady=5)
+            
+            ttk.Label(dialog, text="출력 형식:").pack(pady=5)
+            format_var = tk.StringVar(value="pdf")
+            ttk.Combobox(dialog, textvariable=format_var,
+                        values=["pdf", "docx", "html", "excel"],
+                        state="readonly").pack(pady=5)
+            
+            def generate_report():
+                try:
+                    file_path = filedialog.asksaveasfilename(
+                        title="보고서 저장",
+                        defaultextension=f".{format_var.get()}",
+                        filetypes=[(f"{format_var.get().upper()} 파일", f"*.{format_var.get()}")]
+                    )
+                    
+                    if file_path:
+                        generator = QCReportGenerator()
+                        result_path = generator.generate_report(
+                            self.last_qc_results,
+                            template_var.get(),
+                            format_var.get(),
+                            file_path
+                        )
+                        
+                        if result_path:
+                            messagebox.showinfo("성공", f"보고서가 생성되었습니다.\n{result_path}")
+                            dialog.destroy()
+                        else:
+                            messagebox.showerror("오류", "보고서 생성에 실패했습니다.")
+                
+                except Exception as e:
+                    messagebox.showerror("오류", f"보고서 생성 오류: {str(e)}")
+            
+            ttk.Button(dialog, text="생성", command=generate_report).pack(pady=10)
+            ttk.Button(dialog, text="취소", command=dialog.destroy).pack()
+            
+        except Exception as e:
+            messagebox.showerror("오류", f"보고서 생성 오류: {str(e)}")
 
-    # 클래스에 메서드 추가
+    def start_batch_qc(self):
+        """배치 QC 검수 시작"""
+        try:
+            from .batch_qc import BatchQCManager
+            
+            # 배치 QC 다이얼로그
+            dialog = tk.Toplevel(self.window)
+            dialog.title("배치 QC 검수")
+            dialog.geometry("400x300")
+            dialog.transient(self.window)
+            dialog.grab_set()
+            
+            ttk.Label(dialog, text="세션 이름:").pack(pady=5)
+            session_name_var = tk.StringVar(value=f"Batch_QC_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+            ttk.Entry(dialog, textvariable=session_name_var).pack(pady=5)
+            
+            ttk.Label(dialog, text="검수자명:").pack(pady=5)
+            inspector_var = tk.StringVar(value="QC Engineer")
+            ttk.Entry(dialog, textvariable=inspector_var).pack(pady=5)
+            
+            def start_batch():
+                try:
+                    if not hasattr(self, 'selected_qc_files') or not self.selected_qc_files:
+                        messagebox.showwarning("알림", "먼저 파일을 선택해주세요.")
+                        return
+                    
+                    from .batch_qc import BatchQCSession
+                    from .schema import DBSchema
+                    
+                    db_schema = getattr(self, 'db_schema', None) or DBSchema()
+                    session = BatchQCSession(
+                        session_name_var.get(),
+                        inspector_var.get(),
+                        template_id=None,
+                        db_schema=db_schema
+                    )
+                    
+                    # 선택된 파일들을 세션에 추가
+                    selected_type = self.qc_type_var.get()
+                    equipment_type_id = getattr(self, 'equipment_types_for_qc', {}).get(selected_type)
+                    
+                    for filename, filepath in self.selected_qc_files.items():
+                        session.add_item(filename, equipment_type_id, filepath)
+                    
+                    # 진행 상황 콜백 설정
+                    def progress_callback(progress, message):
+                        self.qc_progress.config(value=progress)
+                        self.qc_status_label.config(text=message)
+                        self.window.update_idletasks()
+                    
+                    def completion_callback(summary):
+                        self.qc_status_label.config(text=f"✅ 배치 검수 완료 - {summary['success_rate']:.1f}% 성공")
+                        self.qc_progress.config(value=100)
+                        messagebox.showinfo("완료", f"배치 검수가 완료되었습니다.\n성공률: {summary['success_rate']:.1f}%")
+                    
+                    session.set_callbacks(progress_callback, completion_callback)
+                    
+                    dialog.destroy()
+                    
+                    # 배치 검수 시작 (별도 스레드에서)
+                    import threading
+                    threading.Thread(target=lambda: session.start_batch_inspection(max_workers=3), 
+                                   daemon=True).start()
+                    
+                except Exception as e:
+                    messagebox.showerror("오류", f"배치 검수 시작 오류: {str(e)}")
+            
+            ttk.Button(dialog, text="시작", command=start_batch).pack(pady=10)
+            ttk.Button(dialog, text="취소", command=dialog.destroy).pack()
+            
+        except Exception as e:
+            messagebox.showerror("오류", f"배치 검수 오류: {str(e)}")
+
+    # 클래스에 핵심 메서드만 추가
     cls.create_enhanced_qc_tab = create_enhanced_qc_tab
     cls.select_qc_files = select_qc_files
     cls.perform_enhanced_qc_check = perform_enhanced_qc_check
     cls.show_enhanced_qc_statistics = show_enhanced_qc_statistics
     cls.create_enhanced_charts = create_enhanced_charts
-    cls.export_enhanced_qc_results = export_enhanced_qc_results 
+    cls.export_qc_results_simple = export_qc_results_simple 
