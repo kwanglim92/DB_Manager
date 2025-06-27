@@ -5,11 +5,12 @@
 """
 
 from .equipment_service import EquipmentService
-from .parameter_service import ParameterService
-from .equipment_validator import EquipmentValidator
+# 아직 구현되지 않은 서비스들
+# from .parameter_service import ParameterService
+# from .equipment_validator import EquipmentValidator
 
 __all__ = [
     'EquipmentService',
-    'ParameterService', 
-    'EquipmentValidator'
+    # 'ParameterService', 
+    # 'EquipmentValidator'
 ] 

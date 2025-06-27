@@ -294,6 +294,79 @@ class DBSchema:
             ''', (limit, offset))
             return cursor.fetchall()
 
+    def log_change_history(self, change_type, item_type, item_name, old_value="", new_value="", changed_by=""):
+        """변경 이력을 기록합니다 (호환성을 위한 래퍼 메서드)"""
+        return self.add_change_history(change_type, item_type, item_name, old_value, new_value, changed_by)
+
+    def get_parameter_by_id(self, parameter_id, conn_override=None):
+        """특정 ID의 파라미터 정보를 반환합니다"""
+        with self.get_connection(conn_override) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+            SELECT d.id, d.equipment_type_id, d.parameter_name, d.default_value, 
+                   d.min_spec, d.max_spec, e.type_name, d.description,
+                   d.module_name, d.part_name, d.item_type, d.is_checklist,
+                   d.occurrence_count, d.total_files, d.confidence_score, d.source_files
+            FROM Default_DB_Values d
+            JOIN Equipment_Types e ON d.equipment_type_id = e.id
+            WHERE d.id = ?
+            ''', (parameter_id,))
+            
+            result = cursor.fetchone()
+            if result:
+                return {
+                    'id': result[0],
+                    'equipment_type_id': result[1],
+                    'parameter_name': result[2],
+                    'default_value': result[3],
+                    'min_spec': result[4],
+                    'max_spec': result[5],
+                    'equipment_type': result[6],
+                    'description': result[7],
+                    'module_name': result[8],
+                    'part_name': result[9],
+                    'item_type': result[10],
+                    'is_performance': result[11],  # is_checklist을 is_performance로 매핑 (호환성)
+                    'occurrence_count': result[12],
+                    'total_files': result[13],
+                    'confidence_score': result[14],
+                    'source_files': result[15]
+                }
+            return None
+
+    def get_parameter_statistics(self, equipment_type_id, parameter_name, conn_override=None):
+        """파라미터 통계 정보 조회"""
+        with self.get_connection(conn_override) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+            SELECT occurrence_count, total_files, confidence_score, source_files, default_value
+            FROM Default_DB_Values 
+            WHERE equipment_type_id = ? AND parameter_name = ?
+            ''', (equipment_type_id, parameter_name))
+            result = cursor.fetchone()
+            
+            if result:
+                return {
+                    'occurrence_count': result[0],
+                    'total_files': result[1],
+                    'confidence_score': result[2],
+                    'source_files': result[3],
+                    'default_value': result[4]
+                }
+            return None
+
+    def set_performance_status(self, parameter_id, is_performance, conn_override=None):
+        """파라미터의 Performance 상태 설정"""
+        with self.get_connection(conn_override) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+            UPDATE Default_DB_Values 
+            SET is_checklist = ? 
+            WHERE id = ?
+            ''', (1 if is_performance else 0, parameter_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
     # ==================== 유틸리티 메서드 ====================
     
     def get_checklist_parameter_count(self, equipment_type_id, conn_override=None):

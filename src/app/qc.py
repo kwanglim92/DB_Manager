@@ -176,87 +176,96 @@ def add_qc_check_functions_to_class(cls):
         qc_tab = ttk.Frame(self.main_notebook)
         self.main_notebook.add(qc_tab, text="QC 검수")
 
-        # 상단 컨트롤 프레임
-        control_frame = ttk.Frame(qc_tab)
-        control_frame.pack(fill=tk.X, padx=5, pady=5)
+        # 🎨 Professional Engineering Control Panel
+        control_panel = ttk.Frame(qc_tab, style="Control.TFrame")
+        control_panel.pack(fill=tk.X, padx=15, pady=10)
 
-        # 장비 유형 선택 프레임
-        type_frame = ttk.LabelFrame(control_frame, text="장비 유형 및 검수 모드 선택", padding=10)
-        type_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        # Equipment Type Management Section
+        equipment_frame = ttk.LabelFrame(control_panel, text="Equipment Type Management", padding=12)
+        equipment_frame.pack(fill=tk.X, pady=(0, 8))
 
-        # 상단 라인: 장비 유형 선택
-        top_line = ttk.Frame(type_frame)
-        top_line.pack(fill=tk.X, pady=(0, 5))
+        # Equipment type selection line
+        equipment_line = ttk.Frame(equipment_frame)
+        equipment_line.pack(fill=tk.X)
 
-        # 장비 유형 콤보박스
-        ttk.Label(top_line, text="장비 유형:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(equipment_line, text="Equipment Type:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(0, 8))
         self.qc_type_var = tk.StringVar()
-        self.qc_type_combobox = ttk.Combobox(top_line, textvariable=self.qc_type_var, state="readonly", width=20)
-        self.qc_type_combobox.pack(side=tk.LEFT, padx=(0, 10))
+        self.qc_type_combobox = ttk.Combobox(equipment_line, textvariable=self.qc_type_var, 
+                                           state="readonly", width=25, font=("Segoe UI", 9))
+        self.qc_type_combobox.pack(side=tk.LEFT, padx=(0, 12))
         
-        # 새로고침 버튼 추가
-        refresh_btn = ttk.Button(top_line, text="🔄 목록 새로고침", command=self.refresh_qc_equipment_types)
-        refresh_btn.pack(side=tk.LEFT, padx=(5, 10))
+        # Professional refresh button
+        refresh_btn = ttk.Button(equipment_line, text="Refresh", command=self.refresh_qc_equipment_types,
+                               style="Tool.TButton")
+        refresh_btn.pack(side=tk.LEFT, padx=(0, 10))
 
-        # 하단 라인: 검수 모드 선택
-        bottom_line = ttk.Frame(type_frame)
-        bottom_line.pack(fill=tk.X, pady=(5, 0))
+        # QC Mode Configuration Section
+        mode_frame = ttk.LabelFrame(control_panel, text="QC Mode Configuration", padding=12)
+        mode_frame.pack(fill=tk.X, pady=(0, 8))
 
-        # 검수 모드 선택
-        ttk.Label(bottom_line, text="검수 모드:").pack(side=tk.LEFT, padx=(0, 5))
+        mode_line = ttk.Frame(mode_frame)
+        mode_line.pack(fill=tk.X)
+
+        ttk.Label(mode_line, text="Inspection Mode:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(0, 8))
         self.qc_mode_var = tk.StringVar(value="performance")
         
-        performance_radio = ttk.Radiobutton(bottom_line, text="Performance 항목만", 
+        performance_radio = ttk.Radiobutton(mode_line, text="Check List Focused", 
                                           variable=self.qc_mode_var, value="performance")
-        performance_radio.pack(side=tk.LEFT, padx=(0, 10))
+        performance_radio.pack(side=tk.LEFT, padx=(0, 20))
         
-        full_radio = ttk.Radiobutton(bottom_line, text="전체 항목", 
+        full_radio = ttk.Radiobutton(mode_line, text="Full Inspection", 
                                    variable=self.qc_mode_var, value="full")
         full_radio.pack(side=tk.LEFT, padx=(0, 10))
 
-        # QC 실행 버튼 프레임
-        action_frame = ttk.Frame(control_frame)
-        action_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(5, 0))
+        # QC Execution Control Section
+        action_frame = ttk.LabelFrame(control_panel, text="QC Execution Control", padding=12)
+        action_frame.pack(fill=tk.X, pady=(0, 8))
 
-        # QC 실행 버튼
-        qc_btn = ttk.Button(action_frame, text="QC 검수 실행", command=self.perform_qc_check)
-        qc_btn.pack(pady=(0, 5))
+        button_line = ttk.Frame(action_frame)
+        button_line.pack(fill=tk.X)
 
-        # 파일 선택 버튼 (업로드된 파일 선택)
-        file_select_btn = ttk.Button(action_frame, text="검수 파일 선택", command=self.select_qc_files)
-        file_select_btn.pack()
+        # Professional styled buttons
+        file_select_btn = ttk.Button(button_line, text="Select QC Files", command=self.select_qc_files,
+                                   style="TButton")
+        file_select_btn.pack(side=tk.LEFT, padx=(0, 12))
 
-        # 검수 결과 프레임
-        middle_frame = ttk.LabelFrame(qc_tab, text="검수 결과", padding=10)
-        middle_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        qc_btn = ttk.Button(button_line, text="Execute QC Inspection", command=self.perform_qc_check,
+                          style="Accent.TButton")
+        qc_btn.pack(side=tk.LEFT, padx=(0, 12))
 
-        columns = ("parameter", "issue_type", "description", "severity")
+        export_btn = ttk.Button(button_line, text="Export to Excel", command=self.export_qc_results,
+                              style="Success.TButton")
+        export_btn.pack(side=tk.LEFT, padx=(0, 10))
+
+        # 🎨 Professional QC Results Section
+        results_frame = ttk.LabelFrame(qc_tab, text="QC Inspection Results", padding=15)
+        results_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 10))
+
+        columns = ("itemname", "issue_type", "description")
         headings = {
-            "parameter": "파라미터", 
-            "issue_type": "문제 유형", 
-            "description": "설명", 
-            "severity": "심각도"
+            "itemname": "ItemName", 
+            "issue_type": "Issue Type", 
+            "description": "Description"
         }
         column_widths = {
-            "parameter": 200, 
-            "issue_type": 150, 
-            "description": 300, 
-            "severity": 100
+            "itemname": 250, 
+            "issue_type": 200, 
+            "description": 400
         }
 
         qc_result_frame, self.qc_result_tree = create_treeview_with_scrollbar(
-            middle_frame, columns, headings, column_widths, height=15)
+            results_frame, columns, headings, column_widths, height=15)
         qc_result_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # 검수 통계 프레임
-        bottom_frame = ttk.LabelFrame(qc_tab, text="검수 통계", padding=10)
-        bottom_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # 🎨 Professional QC Statistics Section
+        statistics_frame = ttk.LabelFrame(qc_tab, text="QC Statistics & Analysis", padding=15)
+        statistics_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 10))
 
-        self.stats_frame = ttk.Frame(bottom_frame)
-        self.stats_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.stats_frame = ttk.Frame(statistics_frame)
+        self.stats_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10), pady=5)
 
-        self.chart_frame = ttk.Frame(bottom_frame)
-        self.chart_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.chart_frame = ttk.Frame(statistics_frame)
+        self.chart_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(10, 0), pady=5)
 
         # 장비 유형 목록 로드
         self.load_equipment_types_for_qc()
@@ -361,9 +370,18 @@ def add_qc_check_functions_to_class(cls):
             # 결과 트리뷰에 표시 (75%)
             loading_dialog.update_progress(75, "결과 업데이트 중...")
             for i, result in enumerate(results):
+                # 개선된 이슈 유형 매핑
+                issue_type_mapping = {
+                    "누락값": "Missing Data",
+                    "이상치": "Spec Out", 
+                    "중복": "Duplicate Entry",
+                    "일관성": "Inconsistency"
+                }
+                mapped_issue_type = issue_type_mapping.get(result["issue_type"], result["issue_type"])
+                
                 self.qc_result_tree.insert(
                     "", "end", 
-                    values=(result["parameter"], result["issue_type"], result["description"], result["severity"])
+                    values=(result["parameter"], mapped_issue_type, result["description"])
                 )
 
             # 통계 정보 표시 (90%)
@@ -385,16 +403,11 @@ def add_qc_check_functions_to_class(cls):
             self.update_log(f"❌ QC 검수 오류: {str(e)}")
 
     def show_qc_statistics(self, results):
-        """QC 검수 결과 통계 표시"""
+        """QC 검수 결과 통계 표시 - Professional Engineering Style"""
         if not results:
-            ttk.Label(self.stats_frame, text="이슈가 발견되지 않았습니다.").pack(padx=10, pady=10)
+            ttk.Label(self.stats_frame, text="No Issues Detected", 
+                     font=("Segoe UI", 10, "bold"), foreground="green").pack(padx=15, pady=15)
             return
-
-        # 심각도별 카운트
-        severity_counts = {"높음": 0, "중간": 0, "낮음": 0}
-        for result in results:
-            severity = result["severity"]
-            severity_counts[severity] = severity_counts.get(severity, 0) + 1
 
         # 이슈 유형별 카운트
         issue_counts = {}
@@ -402,47 +415,58 @@ def add_qc_check_functions_to_class(cls):
             issue_type = result["issue_type"]
             issue_counts[issue_type] = issue_counts.get(issue_type, 0) + 1
 
-        # 통계 표시
-        ttk.Label(self.stats_frame, text=f"총 이슈 수: {len(results)}건", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=5)
+        # Professional Statistics Display
+        stats_title = ttk.Label(self.stats_frame, text=f"Total Issues Found: {len(results)}", 
+                               font=("Segoe UI", 12, "bold"), style="Title.TLabel")
+        stats_title.pack(anchor="w", padx=15, pady=(10, 5))
 
-        # 심각도별 통계
-        ttk.Label(self.stats_frame, text="심각도별 통계:", font=("Arial", 10, "bold")).pack(anchor="w", padx=10, pady=2)
-        for severity, count in severity_counts.items():
-            if count > 0:
-                ttk.Label(self.stats_frame, text=f"• {severity}: {count}건").pack(anchor="w", padx=20, pady=1)
-
-        # 이슈 유형별 통계
-        ttk.Label(self.stats_frame, text="이슈 유형별 통계:", font=("Arial", 10, "bold")).pack(anchor="w", padx=10, pady=2)
+        # Issue Type Statistics
+        type_title = ttk.Label(self.stats_frame, text="Issue Type Breakdown:", 
+                              font=("Segoe UI", 10, "bold"))
+        type_title.pack(anchor="w", padx=15, pady=(10, 5))
+        
         for issue_type, count in issue_counts.items():
-            ttk.Label(self.stats_frame, text=f"• {issue_type}: {count}건").pack(anchor="w", padx=20, pady=1)
+            percentage = (count / len(results)) * 100
+            stats_label = ttk.Label(self.stats_frame, 
+                                  text=f"• {issue_type}: {count} ({percentage:.1f}%)",
+                                  font=("Segoe UI", 9))
+            stats_label.pack(anchor="w", padx=25, pady=2)
 
-        # 파이 차트 생성
-        self.create_pie_chart(severity_counts, "심각도별 이슈 분포")
+        # Create Issue Type Distribution Chart
+        self.create_pie_chart(issue_counts, "Issue Type Distribution")
 
     def create_pie_chart(self, data, title):
-        """파이 차트 생성"""
-        fig, ax = plt.subplots(figsize=(5, 4))
+        """Professional Engineering Style Pie Chart"""
+        fig, ax = plt.subplots(figsize=(6, 4))
 
         # 데이터가 있는 항목만 포함
         labels = []
         sizes = []
-        colors = {'높음': 'red', '중간': 'orange', '낮음': 'green'}
+        # Professional color scheme for engineering applications
+        professional_colors = ['#0078d4', '#107c10', '#ff8c00', '#d13438', '#605e5c', '#8764b8']
         chart_colors = []
 
-        for label, value in data.items():
+        for i, (label, value) in enumerate(data.items()):
             if value > 0:
                 labels.append(label)
                 sizes.append(value)
-                chart_colors.append(colors.get(label, 'blue'))
+                chart_colors.append(professional_colors[i % len(professional_colors)])
 
         if not sizes:  # 데이터가 없는 경우
-            ax.text(0.5, 0.5, "데이터 없음", ha='center', va='center')
+            ax.text(0.5, 0.5, "No Data Available", ha='center', va='center', 
+                   fontsize=12, color='gray')
             ax.axis('off')
         else:
-            ax.pie(sizes, labels=labels, autopct='%1.1f%%', colors=chart_colors, startangle=90)
+            wedges, texts, autotexts = ax.pie(sizes, labels=labels, autopct='%1.1f%%', 
+                                            colors=chart_colors, startangle=90)
             ax.axis('equal')  # 원형 파이 차트
+            
+            # Professional styling
+            for autotext in autotexts:
+                autotext.set_color('white')
+                autotext.set_fontweight('bold')
 
-        ax.set_title(title)
+        ax.set_title(title, fontsize=12, fontweight='bold', pad=20)
 
         # tkinter 캔버스에 matplotlib 차트 표시
         canvas = FigureCanvasTkAgg(fig, master=self.chart_frame)
@@ -468,7 +492,7 @@ def add_qc_check_functions_to_class(cls):
         try:
             # 트리뷰 데이터 수집
             data = []
-            columns = ["파라미터", "문제 유형", "설명", "심각도"]
+            columns = ["ItemName", "Issue Type", "Description"]
 
             for item_id in self.qc_result_tree.get_children():
                 values = self.qc_result_tree.item(item_id, 'values')
@@ -481,8 +505,8 @@ def add_qc_check_functions_to_class(cls):
             equipment_type = self.qc_type_var.get()
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             summary_data = {
-                "정보": ["장비 유형", "검수 일시", "총 이슈 수"],
-                "값": [equipment_type, timestamp, len(data)]
+                "Information": ["Equipment Type", "Inspection Time", "Total Issues"],
+                "Value": [equipment_type, timestamp, len(data)]
             }
             summary_df = pd.DataFrame(summary_data)
 

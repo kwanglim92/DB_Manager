@@ -61,12 +61,17 @@ class DBManager:
             self.db_schema = DBSchema()
         except Exception as e:
             print(f"DB 스키마 초기화 실패: {str(e)}")
+            import traceback
+            traceback.print_exc()
             self.db_schema = None
         
         add_qc_check_functions_to_class(DBManager)
         add_enhanced_qc_functions_to_class(DBManager)
         # Default DB 기능 제거됨 - 리팩토링 완료
         add_change_history_functions_to_class(DBManager)
+        
+        # 서비스 레이어 초기화 (DB 스키마 초기화 후)
+        self._setup_service_layer()
         
         # 🆕 아이콘 로드 개선 (기존 코드와 호환)
         if USE_NEW_CONFIG:
@@ -85,6 +90,15 @@ class DBManager:
             self.update_log("로컬 데이터베이스 초기화 완료")
         else:
             self.update_log("DB 스키마 초기화 실패")
+        
+        # 서비스 레이어 상태 로그 추가
+        if hasattr(self, '_service_layer_ready') and self._service_layer_ready:
+            status = self.service_factory.get_service_status()
+            self.update_log(f"서비스 레이어 초기화 완료: {len(status)}개 서비스 등록")
+            
+            # 장비 관리 서비스 상태 확인
+            if 'IEquipmentService' in status:
+                self.update_log("장비 관리 서비스 사용 가능")
         
         # 🆕 ConfigManager 초기화 (설정 및 서비스 관리)
         config_to_pass = self.config if USE_NEW_CONFIG else None
@@ -150,6 +164,7 @@ class DBManager:
         self.legacy_adapter = None
         self.use_new_services = {}
         
+        
         if not USE_NEW_SERVICES or not SERVICES_AVAILABLE:
             # 새로운 서비스 시스템이 아직 구현되지 않았으므로 기존 방식 사용 (정상 동작)
             return
@@ -171,14 +186,10 @@ class DBManager:
                 self.service_factory = ServiceFactory(self.db_schema, service_config)
                 self.legacy_adapter = LegacyAdapter(self.service_factory)
                 
-                # 서비스 상태 로깅
+                # 서비스 상태 확인
                 status = self.service_factory.get_service_status()
-                self.update_log(f"서비스 레이어 초기화 완료: {len(status)}개 서비스 등록")
-                
-                # 활성 서비스들 확인
-                active_services = [k for k, v in self.use_new_services.items() if v]
-                if active_services:
-                    self.update_log(f"활성 서비스: {', '.join(active_services)}")
+                # UI 초기화 후 로그 추가를 위해 플래그 설정
+                self._service_layer_ready = True
                 
             else:
                 self.update_log("DB 스키마가 없어 서비스 팩토리를 초기화할 수 없습니다")
@@ -2687,16 +2698,18 @@ class DBManager:
             type_id = int(type_id_str)
             self.update_log(f"🔍 추출된 장비 유형 ID: {type_id}")
             
-            # 🆕 Performance 필터 적용하여 파라미터 조회
+            # 🆕 Performance 필터 적용하여 파라미터 조회 (현재는 checklist_only 지원)
             performance_only = hasattr(self, 'show_performance_only_var') and self.show_performance_only_var.get()
-            default_values = self.db_schema.get_default_values(type_id, performance_only=performance_only)
+            default_values = self.db_schema.get_default_values(type_id, checklist_only=performance_only)
             
-            # 🆕 Performance 통계 업데이트
+            # 🆕 Performance 통계 업데이트 (기본 구현)
             if hasattr(self, 'performance_stats_label'):
                 try:
-                    stats = self.db_schema.get_equipment_performance_count(type_id)
-                    perf_ratio = (stats['performance'] / stats['total'] * 100) if stats['total'] > 0 else 0
-                    stats_text = f"🎯 Performance: {stats['performance']}/{stats['total']} ({perf_ratio:.1f}%)"
+                    # 간단한 통계 계산
+                    total_count = len(default_values) if default_values else 0
+                    perf_count = sum(1 for item in default_values if len(item) > 14 and item[14]) if default_values else 0
+                    perf_ratio = (perf_count / total_count * 100) if total_count > 0 else 0
+                    stats_text = f"🎯 Performance: {perf_count}/{total_count} ({perf_ratio:.1f}%)"
                     self.performance_stats_label.config(text=stats_text)
                 except:
                     self.performance_stats_label.config(text="")

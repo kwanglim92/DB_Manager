@@ -28,19 +28,20 @@ from .interfaces import (
 
 # 구현체들 (점진적 전환을 위해 조건부 import)
 try:
-    from .equipment import EquipmentService, ParameterService
-    from .data import DataProcessingService, FileService
-    from .validation import ValidationService, QCService
+    from .equipment import EquipmentService
+    # 아직 구현되지 않은 서비스들은 주석 처리
+    # from .data import DataProcessingService, FileService
+    # from .validation import ValidationService, QCService
     
     # 서비스 팩토리
     from .service_factory import ServiceFactory
     
     SERVICES_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    print(f"서비스 import 실패: {e}")
     SERVICES_AVAILABLE = False
-
-# 서비스 팩토리
-from .service_factory import ServiceFactory
+    # import 실패 시 기본 팩토리만 사용
+    from .service_factory import ServiceFactory
 
 # 서비스 인터페이스들
 from .interfaces.data_service_interface import DataServiceInterface
@@ -73,8 +74,8 @@ class LegacyAdapter:
     USE_NEW_SERVICES 플래그를 통해 점진적 전환 지원
     """
     
-    def __init__(self):
-        self.service_factory = ServiceFactory()
+    def __init__(self, service_factory=None):
+        self.service_factory = service_factory or ServiceFactory()
         self._use_new_services = self._load_use_new_services_flag()
     
     def _load_use_new_services_flag(self) -> bool:
@@ -104,16 +105,23 @@ class LegacyAdapter:
                 return None
         return None
 
-# 전역 레거시 어댑터 인스턴스
-_legacy_adapter = LegacyAdapter()
+# 전역 레거시 어댑터 인스턴스 (지연 초기화)
+_legacy_adapter = None
+
+def _get_legacy_adapter():
+    """레거시 어댑터 지연 초기화"""
+    global _legacy_adapter
+    if _legacy_adapter is None:
+        _legacy_adapter = LegacyAdapter()
+    return _legacy_adapter
 
 def get_equipment_service():
     """전역 장비 서비스 접근"""
-    return _legacy_adapter.get_equipment_service()
+    return _get_legacy_adapter().get_equipment_service()
 
 def get_logging_service():
     """전역 로깅 서비스 접근"""
-    return _legacy_adapter.get_logging_service()
+    return _get_legacy_adapter().get_logging_service()
 
 __all__ = [
     # 인터페이스

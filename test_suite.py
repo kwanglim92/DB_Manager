@@ -173,6 +173,158 @@ class TestDialogHelpers(unittest.TestCase):
         self.assertEqual(len(log_messages), 1)
 
 
+class TestDatabaseSchema(unittest.TestCase):
+    """schema.py 데이터베이스 스키마 테스트"""
+    
+    def setUp(self):
+        """테스트용 DB 스키마 초기화"""
+        from app.schema import DBSchema
+        import tempfile
+        import os
+        
+        # 임시 DB 파일 생성
+        self.temp_db = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+        self.temp_db_path = self.temp_db.name
+        self.temp_db.close()
+        
+        self.db_schema = DBSchema(self.temp_db_path)
+    
+    def tearDown(self):
+        """테스트 정리"""
+        import os
+        if os.path.exists(self.temp_db_path):
+            os.unlink(self.temp_db_path)
+    
+    def test_equipment_type_operations(self):
+        """장비 유형 CRUD 테스트"""
+        # 장비 유형 추가
+        type_id = self.db_schema.add_equipment_type("TestEquipment", "Test Description")
+        self.assertIsNotNone(type_id)
+        
+        # 장비 유형 조회
+        equipment_types = self.db_schema.get_equipment_types()
+        self.assertTrue(len(equipment_types) > 0)
+        
+        # 이름으로 장비 유형 조회
+        found_type = self.db_schema.get_equipment_type_by_name("TestEquipment")
+        self.assertIsNotNone(found_type)
+        self.assertEqual(found_type[1], "TestEquipment")
+    
+    def test_default_value_operations(self):
+        """Default DB 값 CRUD 테스트"""
+        # 장비 유형 생성
+        type_id = self.db_schema.add_equipment_type("TestEquipment")
+        
+        # Default 값 추가
+        value_id = self.db_schema.add_default_value(
+            equipment_type_id=type_id,
+            parameter_name="TestParam",
+            default_value="100",
+            min_spec="90",
+            max_spec="110"
+        )
+        self.assertIsNotNone(value_id)
+        
+        # Default 값 조회
+        values = self.db_schema.get_default_values(type_id)
+        self.assertTrue(len(values) > 0)
+        
+        # 특정 파라미터 조회 (새로 추가된 메서드)
+        param_data = self.db_schema.get_parameter_by_id(value_id)
+        self.assertIsNotNone(param_data)
+        self.assertEqual(param_data['parameter_name'], "TestParam")
+    
+    def test_change_history_operations(self):
+        """변경 이력 테스트"""
+        # 변경 이력 추가 (새로 추가된 메서드)
+        history_id = self.db_schema.log_change_history(
+            "add", "parameter", "TestParam", "", "100", "test_user"
+        )
+        self.assertIsNotNone(history_id)
+        
+        # 변경 이력 조회
+        history = self.db_schema.get_change_history(limit=10)
+        self.assertTrue(len(history) > 0)
+    
+    def test_parameter_statistics(self):
+        """파라미터 통계 조회 테스트 (새로 추가된 메서드)"""
+        # 장비 유형 및 파라미터 생성
+        type_id = self.db_schema.add_equipment_type("TestEquipment")
+        self.db_schema.add_default_value(
+            equipment_type_id=type_id,
+            parameter_name="TestParam",
+            default_value="100",
+            occurrence_count=5,
+            total_files=10,
+            confidence_score=0.8
+        )
+        
+        # 통계 조회
+        stats = self.db_schema.get_parameter_statistics(type_id, "TestParam")
+        self.assertIsNotNone(stats)
+        self.assertEqual(stats['occurrence_count'], 5)
+        self.assertEqual(stats['total_files'], 10)
+    
+    def test_performance_status(self):
+        """Performance 상태 설정 테스트 (새로 추가된 메서드)"""
+        # 장비 유형 및 파라미터 생성
+        type_id = self.db_schema.add_equipment_type("TestEquipment")
+        value_id = self.db_schema.add_default_value(
+            equipment_type_id=type_id,
+            parameter_name="TestParam",
+            default_value="100"
+        )
+        
+        # Performance 상태 설정
+        result = self.db_schema.set_performance_status(value_id, True)
+        self.assertTrue(result)
+        
+        # 설정 확인
+        param_data = self.db_schema.get_parameter_by_id(value_id)
+        self.assertIsNotNone(param_data)
+        self.assertTrue(param_data['is_performance'])
+
+
+class TestServiceLayer(unittest.TestCase):
+    """서비스 레이어 테스트"""
+    
+    def test_service_imports(self):
+        """서비스 모듈 import 테스트"""
+        try:
+            from app.services import ServiceFactory, LegacyAdapter, SERVICES_AVAILABLE
+            self.assertTrue(SERVICES_AVAILABLE)
+        except ImportError as e:
+            self.fail(f"서비스 모듈 import 실패: {e}")
+    
+    def test_service_factory_creation(self):
+        """서비스 팩토리 생성 테스트"""
+        try:
+            from app.services import ServiceFactory
+            from app.schema import DBSchema
+            
+            # 임시 DB 스키마 생성
+            import tempfile
+            temp_db = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+            temp_db.close()
+            
+            db_schema = DBSchema(temp_db.name)
+            service_factory = ServiceFactory(db_schema)
+            
+            self.assertIsNotNone(service_factory)
+            self.assertIsNotNone(service_factory._db_schema)
+            
+            # 서비스 상태 확인
+            status = service_factory.get_service_status()
+            self.assertIsInstance(status, dict)
+            
+            # 정리
+            import os
+            os.unlink(temp_db.name)
+            
+        except Exception as e:
+            self.fail(f"서비스 팩토리 생성 실패: {e}")
+
+
 class TestManagerIntegration(unittest.TestCase):
     """manager.py 통합 테스트"""
     
@@ -198,6 +350,33 @@ class TestManagerIntegration(unittest.TestCase):
                 __import__(module_name)
             except ImportError as e:
                 self.fail(f"{module_name} import 실패: {e}")
+    
+    def test_schema_methods_exist(self):
+        """필수 schema 메서드 존재 확인"""
+        from app.schema import DBSchema
+        
+        # 임시 DB 생성
+        import tempfile
+        temp_db = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+        temp_db.close()
+        
+        try:
+            db_schema = DBSchema(temp_db.name)
+            
+            # 필수 메서드들 존재 확인
+            required_methods = [
+                'get_parameter_by_id',
+                'log_change_history', 
+                'get_parameter_statistics',
+                'set_performance_status'
+            ]
+            
+            for method_name in required_methods:
+                self.assertTrue(hasattr(db_schema, method_name), 
+                              f"DBSchema에 {method_name} 메서드가 없음")
+        finally:
+            import os
+            os.unlink(temp_db.name)
 
 
 class TestCodeMetrics(unittest.TestCase):
@@ -281,6 +460,8 @@ def main():
         TestConfigManager, 
         TestFileService,
         TestDialogHelpers,
+        TestDatabaseSchema,
+        TestServiceLayer,
         TestManagerIntegration,
         TestCodeMetrics
     ]
