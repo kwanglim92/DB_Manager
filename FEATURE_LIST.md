@@ -1,5 +1,41 @@
 # DB Manager 애플리케이션 기능 리스트
 
+## 🗂️ 프로젝트 구조 정리 완료 (2025-07-02)
+
+### 정리된 파일 구조
+```
+DB_Manager/
+├── src/                    # 소스 코드
+├── tools/                  # 개발 도구 (NEW!)
+│   ├── debug_toolkit.py    # 통합 디버그 도구
+│   ├── test_runner.py      # 간단한 테스트 실행기
+│   ├── comprehensive_test.py # 종합 테스트 스위트
+│   └── README.md           # 도구 사용 가이드
+├── test/                   # 테스트 데이터
+├── config/                 # 설정 파일
+├── data/                   # 데이터베이스
+└── resources/              # 리소스 파일
+```
+
+### 제거된 중복 파일들
+- ❌ `debug_db.py` → ✅ `tools/debug_toolkit.py`
+- ❌ `debug_params.py` → ✅ `tools/debug_toolkit.py`
+- ❌ `debug_schema.py` → ✅ `tools/debug_toolkit.py`
+- ❌ `debug_services.py` → ✅ `tools/debug_toolkit.py`
+- ❌ `test_comparison_cleanup.py` → ✅ `tools/comprehensive_test.py`
+- ❌ `test_data_utils.py` → ✅ `tools/test_runner.py`
+- ❌ `test_full_integration.py` → ✅ `tools/comprehensive_test.py`
+- ❌ `test_modularization.py` → ✅ `tools/comprehensive_test.py`
+- ❌ `test_suite.py` → ✅ `tools/comprehensive_test.py`
+
+### 통합 도구의 장점
+1. **중복 제거**: 9개 파일 → 3개 파일로 통합
+2. **기능 향상**: 더 체계적이고 포괄적인 테스트
+3. **사용성 개선**: 명확한 사용법과 문서화
+4. **유지보수성**: 단일 책임 원칙 적용
+
+---
+
 ## 📋 전체 기능 개요
 
 DB Manager는 반도체 장비의 파라미터 관리 및 품질 검증을 위한 통합 솔루션입니다.

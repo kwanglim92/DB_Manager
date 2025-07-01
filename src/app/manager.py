@@ -2321,7 +2321,7 @@ class DBManager:
                 "default_value": "Default Value",
                 "min_spec": "Min Spec",
                 "max_spec": "Max Spec",
-                "is_performance": "Performance",
+                "is_performance": "Check list",
                 "description": "Description"
             }
 
@@ -2428,11 +2428,11 @@ class DBManager:
             clear_btn = ttk.Button(search_frame, text="Clear", command=self._clear_parameter_search)
             clear_btn.pack(side=tk.LEFT, padx=(0, 15))
             
-            # Performance 필터 체크박스를 Parameter List로 이동
+            # Check list 필터 체크박스를 Parameter List로 이동
             self.show_performance_only_var = tk.BooleanVar()
             performance_cb = ttk.Checkbutton(
                 search_frame, 
-                text="Performance Only", 
+                text="Check list Only", 
                 variable=self.show_performance_only_var,
                 command=self.apply_performance_filter
             )
@@ -2855,9 +2855,9 @@ class DBManager:
         performance_count = sum(1 for item in default_values if len(item) > 14 and item[14] == 1)
         
         self.default_db_status_label.config(text=f"총 {total_count}개 파라미터 로드됨")
-        self.performance_stats_label.config(text=f"🎯 Performance: {performance_count}개")
+        self.performance_stats_label.config(text=f"🎯 Check list: {performance_count}개")
         
-        self.update_log(f"✅ Default DB 표시 업데이트 완료: {total_count}개 항목 (Performance: {performance_count}개)")
+        self.update_log(f"✅ Default DB 표시 업데이트 완료: {total_count}개 항목 (Check list: {performance_count}개)")
 
     def add_equipment_type_dialog(self):
         """새 장비 유형 추가 다이얼로그"""
@@ -4266,10 +4266,27 @@ class DBManager:
             # 모든 선택된 항목에 새로운 상태 적용
             success_count = 0
             for item in selected_items:
-                values = self.default_db_tree.item(item, 'values')
-                if values:
-                    record_id = values[0]  # ID 컬럼
-                    parameter_name = values[1]  # 파라미터명
+                try:
+                    # 트리뷰 아이템에서 tags를 통해 실제 DB ID 가져오기
+                    tags = self.default_db_tree.item(item, 'tags')
+                    values = self.default_db_tree.item(item, 'values')
+                    
+                    if not tags or not values:
+                        self.update_log(f"⚠️ 선택된 항목의 정보를 찾을 수 없습니다.")
+                        continue
+                    
+                    # tags에서 id_ 접두어를 제거하여 실제 record_id 추출
+                    record_id = None
+                    for tag in tags:
+                        if tag.startswith('id_'):
+                            record_id = tag[3:]  # 'id_' 제거
+                            break
+                    
+                    if not record_id:
+                        self.update_log(f"⚠️ 선택된 항목의 ID를 찾을 수 없습니다.")
+                        continue
+                    
+                    parameter_name = values[1] if len(values) > 1 else "Unknown"  # 파라미터명
                     
                     # DB에서 Performance 상태 업데이트
                     if self.db_schema.set_performance_status(record_id, new_performance_status):
@@ -4277,6 +4294,10 @@ class DBManager:
                         self.update_log(f"✅ {parameter_name}: Performance {'설정' if new_performance_status else '해제'}")
                     else:
                         self.update_log(f"❌ {parameter_name}: Performance 상태 변경 실패")
+                        
+                except Exception as item_error:
+                    self.update_log(f"⚠️ 항목 처리 중 오류: {str(item_error)}")
+                    continue
             
             if success_count > 0:
                 status_text = "Performance로 설정" if new_performance_status else "Performance 해제"
@@ -4295,16 +4316,16 @@ class DBManager:
 
 
     def create_default_db_context_menu(self):
-        """Default DB 트리뷰용 우클릭 메뉴 생성 - Performance 관리 전용"""
+        """Default DB 트리뷰용 우클릭 메뉴 생성 - Check list 관리 전용"""
         self.default_db_context_menu = tk.Menu(self.window, tearoff=0)
         
-        # Performance 관련 메뉴만 유지 (엔지니어링 스타일)
+        # Check list 관련 메뉴만 유지 (엔지니어링 스타일)
         self.default_db_context_menu.add_command(
-            label="Set as Performance", 
+            label="Set as Check list", 
             command=lambda: self.set_performance_status(True)
         )
         self.default_db_context_menu.add_command(
-            label="Remove Performance", 
+            label="Remove Check list", 
             command=lambda: self.set_performance_status(False)
         )
 
@@ -4320,47 +4341,68 @@ class DBManager:
             self.update_log(f"우클릭 메뉴 표시 오류: {e}")
 
     def set_performance_status(self, is_performance):
-        """선택된 파라미터의 Performance 상태 설정"""
+        """선택된 파라미터의 Check list 상태 설정"""
         try:
             if not self.maint_mode:
-                messagebox.showwarning("권한 없음", "유지보수 모드에서만 Performance 상태를 변경할 수 있습니다.")
+                messagebox.showwarning("권한 없음", "유지보수 모드에서만 Check list 상태를 변경할 수 있습니다.")
                 return
             
             selected_items = self.default_db_tree.selection()
             if not selected_items:
-                messagebox.showwarning("선택 필요", "Performance 상태를 변경할 파라미터를 선택해주세요.")
+                messagebox.showwarning("선택 필요", "Check list 상태를 변경할 파라미터를 선택해주세요.")
                 return
             
             success_count = 0
             for item in selected_items:
-                values = self.default_db_tree.item(item, 'values')
-                if values:
-                    record_id = values[0]  # ID 컬럼
-                    parameter_name = values[1]  # 파라미터명
+                try:
+                    # 트리뷰 아이템에서 tags를 통해 실제 DB ID 가져오기
+                    tags = self.default_db_tree.item(item, 'tags')
+                    values = self.default_db_tree.item(item, 'values')
                     
-                    # DB에서 Performance 상태 업데이트
+                    if not tags or not values:
+                        self.update_log(f"⚠️ 선택된 항목의 정보를 찾을 수 없습니다.")
+                        continue
+                    
+                    # tags에서 id_ 접두어를 제거하여 실제 record_id 추출
+                    record_id = None
+                    for tag in tags:
+                        if tag.startswith('id_'):
+                            record_id = tag[3:]  # 'id_' 제거
+                            break
+                    
+                    if not record_id:
+                        self.update_log(f"⚠️ 선택된 항목의 ID를 찾을 수 없습니다.")
+                        continue
+                    
+                    parameter_name = values[1] if len(values) > 1 else "Unknown"  # 파라미터명
+                    
+                    # DB에서 Check list 상태 업데이트
                     if self.db_schema.set_performance_status(record_id, is_performance):
                         success_count += 1
-                        self.update_log(f"✅ {parameter_name}: Performance {'설정' if is_performance else '해제'}")
+                        self.update_log(f"✅ {parameter_name}: Check list {'설정' if is_performance else '해제'}")
                     else:
-                        self.update_log(f"❌ {parameter_name}: Performance 상태 변경 실패")
+                        self.update_log(f"❌ {parameter_name}: Check list 상태 변경 실패")
+                        
+                except Exception as item_error:
+                    self.update_log(f"⚠️ 항목 처리 중 오류: {str(item_error)}")
+                    continue
             
             if success_count > 0:
-                status_text = "Performance로 설정" if is_performance else "Performance 해제"
+                status_text = "Check list로 설정" if is_performance else "Check list 해제"
                 messagebox.showinfo("완료", f"{success_count}개 파라미터의 {status_text}가 완료되었습니다.")
                 
                 # 화면 새로고침
                 self.on_equipment_type_selected()
             else:
-                messagebox.showerror("오류", "Performance 상태 변경에 실패했습니다.")
+                messagebox.showerror("오류", "Check list 상태 변경에 실패했습니다.")
                 
         except Exception as e:
-            error_msg = f"Performance 상태 설정 오류: {str(e)}"
+            error_msg = f"Check list 상태 설정 오류: {str(e)}"
             self.update_log(f"❌ {error_msg}")
             messagebox.showerror("오류", error_msg)
 
     def apply_performance_filter(self):
-        """Performance 필터 적용 - 필터 시스템과 연동"""
+        """Check list 필터 적용 - 필터 시스템과 연동"""
         try:
             # 현재 선택된 장비 유형으로 다시 로드
             self.on_equipment_type_selected()
@@ -4435,7 +4477,7 @@ class DBManager:
                 "default_value": "Default Value",
                 "min_spec": "Min Spec",
                 "max_spec": "Max Spec",
-                "is_performance": "Performance",
+                "is_performance": "Check list",
                 "description": "Description"
             }
             

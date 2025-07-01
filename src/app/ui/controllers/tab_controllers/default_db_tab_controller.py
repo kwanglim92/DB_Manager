@@ -1,6 +1,6 @@
 """
 Default DB 관리 탭 컨트롤러
-Performance 기능을 포함한 완전한 Default DB 관리 시스템
+Check list 기능을 포함한 완전한 Default DB 관리 시스템
 """
 
 import tkinter as tk
@@ -11,7 +11,7 @@ from ..base_controller import TabController
 
 
 class DefaultDBTabController(TabController):
-    """Default DB 관리 탭 컨트롤러 - Performance 기능 포함"""
+    """Default DB 관리 탭 컨트롤러 - Check list 기능 포함"""
     
     def __init__(self, tab_frame: tk.Frame, viewmodel, tab_name: str = "Default DB 관리"):
         """DefaultDBTabController 초기화"""
@@ -108,20 +108,20 @@ class DefaultDBTabController(TabController):
         ttk.Button(basic_mgmt_frame, text="파라미터 추가", command=self._add_parameter_dialog).pack(side=tk.LEFT, padx=5)
         ttk.Button(basic_mgmt_frame, text="선택 항목 삭제", command=self._delete_selected_parameters).pack(side=tk.LEFT, padx=5)
         
-        # 🎯 Performance 관리 버튼들
-        ttk.Button(basic_mgmt_frame, text="🎯 Performance 토글", command=self._toggle_performance_status).pack(side=tk.LEFT, padx=5)
-        ttk.Button(basic_mgmt_frame, text="📊 Performance 통계", command=self._show_performance_statistics).pack(side=tk.LEFT, padx=5)
-        ttk.Button(basic_mgmt_frame, text="✅ Performance 설정", command=lambda: self._set_performance_status(True)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(basic_mgmt_frame, text="❌ Performance 해제", command=lambda: self._set_performance_status(False)).pack(side=tk.LEFT, padx=5)
+        # 🎯 Check list 관리 버튼들
+        ttk.Button(basic_mgmt_frame, text="🎯 Check list 토글", command=self._toggle_performance_status).pack(side=tk.LEFT, padx=5)
+        ttk.Button(basic_mgmt_frame, text="📊 Check list 통계", command=self._show_performance_statistics).pack(side=tk.LEFT, padx=5)
+        ttk.Button(basic_mgmt_frame, text="✅ Check list 설정", command=lambda: self._set_performance_status(True)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(basic_mgmt_frame, text="❌ Check list 해제", command=lambda: self._set_performance_status(False)).pack(side=tk.LEFT, padx=5)
         
         # 두 번째 줄: 필터링 및 보기 옵션
         filter_frame = ttk.Frame(param_frame)
         filter_frame.pack(fill=tk.X, pady=2)
         
-        # Performance 필터 체크박스
+        # Check list 필터 체크박스
         performance_cb = ttk.Checkbutton(
             filter_frame, 
-            text="🎯 Performance 항목만 표시", 
+            text="🎯 Check list 항목만 표시", 
             variable=self.show_performance_only_var,
             command=self._apply_performance_filter
         )
@@ -170,7 +170,7 @@ class DefaultDBTabController(TabController):
             "occurrence_count": "발생횟수",
             "total_files": "전체파일",
             "confidence_score": "신뢰도(%)",
-            "is_performance": "🎯 Performance",
+            "is_performance": "🎯 Check list",
             "source_files": "소스파일",
             "description": "설명"
         }
@@ -233,10 +233,10 @@ class DefaultDBTabController(TabController):
         """컨텍스트 메뉴 생성"""
         self.default_db_context_menu = tk.Menu(self.tab_frame, tearoff=0)
         
-        # Performance 관련 메뉴
-        self.default_db_context_menu.add_command(label="🎯 Performance로 설정", command=lambda: self._set_performance_status(True))
-        self.default_db_context_menu.add_command(label="❌ Performance 해제", command=lambda: self._set_performance_status(False))
-        self.default_db_context_menu.add_command(label="🔄 Performance 토글", command=self._toggle_performance_status)
+        # Check list 관련 메뉴
+        self.default_db_context_menu.add_command(label="🎯 Check list로 설정", command=lambda: self._set_performance_status(True))
+        self.default_db_context_menu.add_command(label="❌ Check list 해제", command=lambda: self._set_performance_status(False))
+        self.default_db_context_menu.add_command(label="🔄 Check list 토글", command=self._toggle_performance_status)
         self.default_db_context_menu.add_separator()
         
         # 기본 편집 메뉴
@@ -317,7 +317,7 @@ class DefaultDBTabController(TabController):
     def _should_filter_record(self, record):
         """레코드 필터링 여부 결정"""
         try:
-            # Performance 필터
+            # Check list 필터
             if self.show_performance_only_var.get():
                 is_performance = record[14] if len(record) > 14 else False
                 if not is_performance:
@@ -358,7 +358,7 @@ class DefaultDBTabController(TabController):
             # 신뢰도를 퍼센트로 변환
             confidence_percent = f"{confidence_score * 100:.1f}"
             
-            # Performance 상태 표시
+            # Check list 상태 표시
             performance_display = "✅ Yes" if is_performance else "❌ No"
             
             return (
@@ -377,12 +377,12 @@ class DefaultDBTabController(TabController):
             count = len(default_values)
             selected_type = self.equipment_type_var.get().split(" (ID:")[0] if self.equipment_type_var.get() else "선택없음"
             
-            # Performance 통계 계산
+            # Check list 통계 계산
             performance_count = sum(1 for record in default_values if len(record) > 14 and record[14])
             performance_ratio = (performance_count / count * 100) if count > 0 else 0
             
             status_text = f"장비유형: {selected_type} | 파라미터: {count}개 | 표시: {added_count}개"
-            performance_text = f"🎯 Performance: {performance_count}개 ({performance_ratio:.1f}%)"
+            performance_text = f"🎯 Check list: {performance_count}개 ({performance_ratio:.1f}%)"
             
             self.default_db_status_label.config(text=status_text)
             self.performance_stats_label.config(text=performance_text)
@@ -391,17 +391,17 @@ class DefaultDBTabController(TabController):
             print(f"상태 표시 업데이트 오류: {e}")
     
     def _toggle_performance_status(self):
-        """Performance 상태 토글"""
+        """Check list 상태 토글"""
         try:
             if not self._check_maintenance_mode():
                 return
             
             selected_items = self.default_db_tree.selection()
             if not selected_items:
-                messagebox.showwarning("선택 필요", "Performance 상태를 토글할 파라미터를 선택해주세요.")
+                messagebox.showwarning("선택 필요", "Check list 상태를 토글할 파라미터를 선택해주세요.")
                 return
             
-            # 첫 번째 선택된 항목의 현재 Performance 상태 확인
+            # 첫 번째 선택된 항목의 현재 Check list 상태 확인
             first_item = selected_items[0]
             values = self.default_db_tree.item(first_item, 'values')
             if not values:
@@ -415,28 +415,28 @@ class DefaultDBTabController(TabController):
             self._apply_performance_status_to_selection(selected_items, new_performance_status)
             
         except Exception as e:
-            print(f"Performance 토글 오류: {e}")
-            messagebox.showerror("오류", f"Performance 상태 토글 오류: {str(e)}")
+            print(f"Check list 토글 오류: {e}")
+            messagebox.showerror("오류", f"Check list 상태 토글 오류: {str(e)}")
     
     def _set_performance_status(self, is_performance):
-        """Performance 상태 설정"""
+        """Check list 상태 설정"""
         try:
             if not self._check_maintenance_mode():
                 return
             
             selected_items = self.default_db_tree.selection()
             if not selected_items:
-                messagebox.showwarning("선택 필요", "Performance 상태를 변경할 파라미터를 선택해주세요.")
+                messagebox.showwarning("선택 필요", "Check list 상태를 변경할 파라미터를 선택해주세요.")
                 return
             
             self._apply_performance_status_to_selection(selected_items, is_performance)
             
         except Exception as e:
-            print(f"Performance 상태 설정 오류: {e}")
-            messagebox.showerror("오류", f"Performance 상태 설정 오류: {str(e)}")
+            print(f"Check list 상태 설정 오류: {e}")
+            messagebox.showerror("오류", f"Check list 상태 설정 오류: {str(e)}")
     
     def _apply_performance_status_to_selection(self, selected_items, is_performance):
-        """선택된 항목들에 Performance 상태 적용"""
+        """선택된 항목들에 Check list 상태 적용"""
         try:
             success_count = 0
             for item in selected_items:
@@ -445,27 +445,27 @@ class DefaultDBTabController(TabController):
                     record_id = values[0]  # ID 컬럼
                     parameter_name = values[1]  # 파라미터명
                     
-                    # DB에서 Performance 상태 업데이트
+                    # DB에서 Check list 상태 업데이트
                     if self.db_schema.set_performance_status(record_id, is_performance):
                         success_count += 1
-                        print(f"✅ {parameter_name}: Performance {'설정' if is_performance else '해제'}")
+                        print(f"✅ {parameter_name}: Check list {'설정' if is_performance else '해제'}")
                     else:
-                        print(f"❌ {parameter_name}: Performance 상태 변경 실패")
+                        print(f"❌ {parameter_name}: Check list 상태 변경 실패")
             
             if success_count > 0:
-                status_text = "Performance로 설정" if is_performance else "Performance 해제"
+                status_text = "Check list로 설정" if is_performance else "Check list 해제"
                 messagebox.showinfo("완료", f"{success_count}개 파라미터의 {status_text}가 완료되었습니다.")
                 
                 # 화면 새로고침
                 self._on_equipment_type_selected()
             else:
-                messagebox.showerror("오류", "Performance 상태 변경에 실패했습니다.")
+                messagebox.showerror("오류", "Check list 상태 변경에 실패했습니다.")
                 
         except Exception as e:
-            print(f"Performance 상태 적용 오류: {e}")
+            print(f"Check list 상태 적용 오류: {e}")
     
     def _show_performance_statistics(self):
-        """Performance 통계 다이얼로그 표시"""
+        """Check list 통계 다이얼로그 표시"""
         try:
             if not self.equipment_type_var.get():
                 messagebox.showwarning("선택 필요", "먼저 장비 유형을 선택해주세요.")
@@ -478,20 +478,20 @@ class DefaultDBTabController(TabController):
             
             equipment_type_id = int(selected_text.split("ID: ")[1].split(")")[0])
             
-            # Performance 통계 조회
+            # Check list 통계 조회
             stats = self.db_schema.get_equipment_performance_count(equipment_type_id)
             
             # 통계 다이얼로그 생성
             self._create_statistics_dialog(stats, selected_text)
             
         except Exception as e:
-            print(f"Performance 통계 표시 오류: {e}")
-            messagebox.showerror("오류", f"Performance 통계 표시 오류: {str(e)}")
+            print(f"Check list 통계 표시 오류: {e}")
+            messagebox.showerror("오류", f"Check list 통계 표시 오류: {str(e)}")
     
     def _create_statistics_dialog(self, stats, selected_text):
         """통계 다이얼로그 생성"""
         stats_window = tk.Toplevel(self.tab_frame)
-        stats_window.title("📊 Performance 통계")
+        stats_window.title("📊 Check list 통계")
         stats_window.geometry("400x300")
         stats_window.transient(self.tab_frame.winfo_toplevel())
         stats_window.grab_set()
@@ -503,7 +503,7 @@ class DefaultDBTabController(TabController):
         # 제목
         title_label = ttk.Label(
             stats_frame, 
-            text=f"🎯 Performance 통계\n{selected_text.split(' (ID:')[0]}", 
+            text=f"🎯 Check list 통계\n{selected_text.split(' (ID:')[0]}", 
             font=('Arial', 12, 'bold'),
             justify='center'
         )
@@ -514,7 +514,7 @@ class DefaultDBTabController(TabController):
         total_frame.pack(fill=tk.X, pady=5)
         ttk.Label(total_frame, text=f"{stats['total']}개", font=('Arial', 16, 'bold')).pack()
         
-        perf_frame = ttk.LabelFrame(stats_frame, text="🎯 Performance 파라미터", padding=10)
+        perf_frame = ttk.LabelFrame(stats_frame, text="🎯 Check list 파라미터", padding=10)
         perf_frame.pack(fill=tk.X, pady=5)
         ttk.Label(perf_frame, text=f"{stats['performance']}개", font=('Arial', 16, 'bold'), foreground='blue').pack()
         
@@ -525,7 +525,7 @@ class DefaultDBTabController(TabController):
         else:
             ratio_text = "0.0%"
         
-        ratio_frame = ttk.LabelFrame(stats_frame, text="📈 Performance 비율", padding=10)
+        ratio_frame = ttk.LabelFrame(stats_frame, text="📈 Check list 비율", padding=10)
         ratio_frame.pack(fill=tk.X, pady=5)
         ttk.Label(ratio_frame, text=ratio_text, font=('Arial', 16, 'bold'), foreground='green').pack()
         
@@ -542,14 +542,14 @@ class DefaultDBTabController(TabController):
     def _get_recommendation(self, performance_count, percentage):
         """권장사항 텍스트와 색상 반환"""
         if performance_count == 0:
-            return ("⚠️ Performance 파라미터가 설정되지 않았습니다.\nQC 검수 품질 향상을 위해 중요한 파라미터를 Performance로 설정해주세요.", 'red')
+            return ("⚠️ Check list 파라미터가 설정되지 않았습니다.\nQC 검수 품질 향상을 위해 중요한 파라미터를 Check list로 설정해주세요.", 'red')
         elif percentage < 20:
-            return ("💡 Performance 파라미터 비율이 낮습니다.\n추가 설정을 권장합니다.", 'orange')
+            return ("💡 Check list 파라미터 비율이 낮습니다.\n추가 설정을 권장합니다.", 'orange')
         else:
-            return ("✅ Performance 파라미터가 적절히 설정되었습니다.", 'green')
+            return ("✅ Check list 파라미터가 적절히 설정되었습니다.", 'green')
     
     def _apply_performance_filter(self):
-        """Performance 필터 적용"""
+        """Check list 필터 적용"""
         self._on_equipment_type_selected()
     
     def _apply_confidence_filter(self, event=None):
@@ -630,8 +630,8 @@ class DefaultDBTabController(TabController):
 • 전체 파일 수: {values[9]}
 • 신뢰도: {values[10]}%
 
-🎯 Performance 설정:
-• Performance 항목: {values[11]}
+🎯 Check list 설정:
+• Check list 항목: {values[11]}
 
 📁 소스 정보:
 • 소스 파일: {values[12]}
@@ -649,7 +649,7 @@ class DefaultDBTabController(TabController):
     def _check_maintenance_mode(self):
         """유지보수 모드 확인"""
         if not self.maint_mode:
-            messagebox.showwarning("권한 없음", "유지보수 모드에서만 Performance 상태를 변경할 수 있습니다.")
+            messagebox.showwarning("권한 없음", "유지보수 모드에서만 Check list 상태를 변경할 수 있습니다.")
             return False
         return True
     
