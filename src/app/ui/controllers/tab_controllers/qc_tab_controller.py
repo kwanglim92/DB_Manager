@@ -108,19 +108,24 @@ class QCTabController(TabController):
         refresh_btn = ttk.Button(row1, text="🔄 새로고침", command=self._refresh_equipment_types)
         refresh_btn.pack(side=tk.LEFT, padx=(0, 15))
 
-        # 검수 모드 선택
-        ttk.Label(row1, text="🔍 검수 모드:", font=('Arial', 9, 'bold')).pack(side=tk.LEFT, padx=(0, 5))
+        # 검수 모드 선택 (숨김 처리 - 리팩토링 중)
+        self.qc_mode_label = ttk.Label(row1, text="🔍 검수 모드:", font=('Arial', 9, 'bold'))
+        self.qc_mode_label.pack(side=tk.LEFT, padx=(0, 5))
+        self.qc_mode_label.pack_forget()  # 숨김 처리
+        
         self.qc_mode_var = tk.StringVar(value="performance")
         
-        performance_radio = ttk.Radiobutton(row1, text="⚡ Performance 중점", 
+        self.performance_radio = ttk.Radiobutton(row1, text="⚡ Performance 중점", 
                                           variable=self.qc_mode_var, value="performance",
                                           command=self._on_mode_changed)
-        performance_radio.pack(side=tk.LEFT, padx=(0, 10))
+        self.performance_radio.pack(side=tk.LEFT, padx=(0, 10))
+        self.performance_radio.pack_forget()  # 숨김 처리
         
-        full_radio = ttk.Radiobutton(row1, text="📋 전체 검수", 
+        self.full_radio = ttk.Radiobutton(row1, text="📋 전체 검수", 
                                    variable=self.qc_mode_var, value="full",
                                    command=self._on_mode_changed)
-        full_radio.pack(side=tk.LEFT, padx=(0, 10))
+        self.full_radio.pack(side=tk.LEFT, padx=(0, 10))
+        self.full_radio.pack_forget()  # 숨김 처리
 
         # 두 번째 행: 검수 옵션 및 실행 버튼
         row2 = ttk.Frame(control_panel)
@@ -145,6 +150,12 @@ class QCTabController(TabController):
                        variable=self.qc_option_vars['check_ranges']).pack(anchor='w')
         ttk.Checkbutton(options_frame, text="데이터 트렌드 분석", 
                        variable=self.qc_option_vars['check_trends']).pack(anchor='w')
+
+        # 신규 전체 항목 포함 체크박스 추가
+        self.chk_include_all_var = tk.BooleanVar(value=False)
+        self.chk_include_all = ttk.Checkbutton(options_frame, text="전체 항목 포함", 
+                                              variable=self.chk_include_all_var)
+        self.chk_include_all.pack(anchor='w')
 
         # 실행 버튼 영역
         action_frame = ttk.Frame(row2)
@@ -177,11 +188,14 @@ class QCTabController(TabController):
         # 탭 1: 검수 결과 목록
         self._create_results_tab()
         
-        # 탭 2: 통계 및 요약
-        self._create_statistics_tab()
+        # 탭 2: 통계 및 요약 (숨김 처리 - 리팩토링 중)
+        self.statistics_tab = self._create_statistics_tab()
         
-        # 탭 3: 시각화
-        self._create_visualization_tab()
+        # 탭 3: 시각화 (숨김 처리 - 리팩토링 중)
+        self.visualization_tab = self._create_visualization_tab()
+        
+        # 탭 4: 최종 보고서 (신규 추가)
+        self._create_final_report_tab()
 
         # 🎨 하단 상태 표시줄
         self._create_status_bar()
@@ -265,21 +279,25 @@ class QCTabController(TabController):
         self.result_tree.bind('<Double-1>', self._on_result_double_click)
 
     def _create_statistics_tab(self):
-        """통계 및 요약 탭 생성"""
+        """통계 및 요약 탭 생성 (숨김 처리 - 리팩토링 중)"""
         stats_tab = ttk.Frame(self.results_notebook)
-        self.results_notebook.add(stats_tab, text="📊 통계 요약")
+        # self.results_notebook.add(stats_tab, text="📊 통계 요약")  # 숨김 처리
 
         # 통계 요약 영역
         self.stats_frame = ttk.Frame(stats_tab)
         self.stats_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        return stats_tab  # 탭 참조 반환 (나중에 삭제 용도)
 
     def _create_visualization_tab(self):
-        """시각화 탭 생성"""
+        """시각화 탭 생성 (숨김 처리 - 리팩토링 중)"""
         chart_tab = ttk.Frame(self.results_notebook)
-        self.results_notebook.add(chart_tab, text="📈 시각화")
+        # self.results_notebook.add(chart_tab, text="📈 시각화")  # 숨김 처리
 
         self.chart_frame = ttk.Frame(chart_tab)
         self.chart_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        return chart_tab  # 탭 참조 반환 (나중에 삭제 용도)
 
     def _create_status_bar(self):
         """상태 표시줄 생성"""
@@ -384,20 +402,28 @@ class QCTabController(TabController):
 
     def _run_enhanced_qc(self):
         """향상된 QC 검수 실행"""
+        # [신규 추가] 전체 항목 포함 체크박스 상태 확인
+        include_all = getattr(self, 'chk_include_all_var', tk.BooleanVar()).get()
+        
         # Enhanced QC 기능 실행
         # 실제 구현은 viewmodel을 통해 수행
         self.viewmodel.execute_command('run_enhanced_qc_check', {
             'equipment_type_id': self.current_equipment_type,
             'mode': self.qc_mode,
             'options': {key: var.get() for key, var in self.qc_option_vars.items()},
+            'include_all_items': include_all,  # 전체 항목 포함 여부 추가
             'callback': self._qc_check_complete
         })
 
     def _run_basic_qc(self):
         """기본 QC 검수 실행"""
+        # [신규 추가] 전체 항목 포함 체크박스 상태 확인
+        include_all = getattr(self, 'chk_include_all_var', tk.BooleanVar()).get()
+        
         # 기본 QC 기능 실행
         self.viewmodel.execute_command('run_basic_qc_check', {
             'equipment_type_id': self.current_equipment_type,
+            'include_all_items': include_all,  # 전체 항목 포함 여부 추가
             'callback': self._qc_check_complete
         })
 
@@ -417,6 +443,11 @@ class QCTabController(TabController):
             self._display_qc_results()
             self._update_status(f"✅ QC 검수 완료 - {len(self.qc_results)}개 이슈 발견")
             self.export_btn.config(state="normal")
+            
+            # [신규 추가] 최종 보고서 탭 업데이트 및 탭 전환
+            self._update_final_report_tab(self.qc_results)
+            if hasattr(self, 'tab_report'):
+                self.results_notebook.select(self.tab_report)  # 최종 보고서 탭으로 전환
         else:
             self.qc_status = "error"
             self._update_status("❌ QC 검수 실패")
@@ -549,3 +580,340 @@ class QCTabController(TabController):
             "description": "품질 검수 및 분석",
             "enhanced": self.enhanced_qc_available
         }
+
+    def _create_final_report_tab(self):
+        """최종 보고서 탭 생성 (신규)"""
+        # 최종 보고서 탭 프레임
+        self.tab_report = ttk.Frame(self.results_notebook)
+        self.results_notebook.add(self.tab_report, text="📊 최종 보고서")
+        
+        # 메인 그리드 레이아웃 설정
+        main_layout = tk.Frame(self.tab_report)
+        main_layout.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # 그리드 레이아웃 사용
+        main_layout.grid_rowconfigure(3, weight=1)  # 실패 항목 테이블이 확장되도록
+        main_layout.grid_columnconfigure(0, weight=1)
+        
+        # (1행) 최종 판정 레이블
+        self.lbl_overall_result = tk.Label(main_layout, text="검수 대기 중", 
+                                          font=('Arial', 20, 'bold'),
+                                          fg='blue', bg='white',
+                                          relief='solid', borderwidth=2,
+                                          pady=15)
+        self.lbl_overall_result.grid(row=0, column=0, sticky='ew', pady=(0, 10))
+        
+        # (2행) 검수 정보 그룹박스
+        info_group = ttk.LabelFrame(main_layout, text="🔍 검수 정보", padding=10)
+        info_group.grid(row=1, column=0, sticky='ew', pady=(0, 10))
+        
+        # 검수 정보 레이블들
+        info_frame = ttk.Frame(info_group)
+        info_frame.pack(fill=tk.X)
+        
+        self.lbl_equipment_type = ttk.Label(info_frame, text="장비 유형: -")
+        self.lbl_equipment_type.grid(row=0, column=0, sticky='w', padx=(0, 20))
+        
+        self.lbl_check_date = ttk.Label(info_frame, text="검수 일시: -")
+        self.lbl_check_date.grid(row=0, column=1, sticky='w', padx=(0, 20))
+        
+        self.lbl_total_items = ttk.Label(info_frame, text="총 항목 수: -")
+        self.lbl_total_items.grid(row=1, column=0, sticky='w', padx=(0, 20))
+        
+        self.lbl_check_mode = ttk.Label(info_frame, text="검수 모드: -")
+        self.lbl_check_mode.grid(row=1, column=1, sticky='w', padx=(0, 20))
+        
+        # (3행) 핵심 요약 그룹박스
+        summary_group = ttk.LabelFrame(main_layout, text="📈 핵심 요약", padding=10)
+        summary_group.grid(row=2, column=0, sticky='ew', pady=(0, 10))
+        
+        # 요약 통계 프레임
+        summary_frame = ttk.Frame(summary_group)
+        summary_frame.pack(fill=tk.X)
+        
+        self.lbl_pass_count = ttk.Label(summary_frame, text="통과: 0개", 
+                                       font=('Arial', 10, 'bold'), foreground='green')
+        self.lbl_pass_count.grid(row=0, column=0, sticky='w', padx=(0, 30))
+        
+        self.lbl_fail_count = ttk.Label(summary_frame, text="실패: 0개", 
+                                       font=('Arial', 10, 'bold'), foreground='red')
+        self.lbl_fail_count.grid(row=0, column=1, sticky='w', padx=(0, 30))
+        
+        self.lbl_critical_count = ttk.Label(summary_frame, text="심각: 0개", 
+                                          font=('Arial', 10, 'bold'), foreground='darkred')
+        self.lbl_critical_count.grid(row=0, column=2, sticky='w')
+        
+        self.lbl_pass_rate = ttk.Label(summary_frame, text="통과율: 0%", 
+                                      font=('Arial', 12, 'bold'))
+        self.lbl_pass_rate.grid(row=1, column=0, columnspan=3, sticky='w', pady=(5, 0))
+        
+        # (4행) 실패 항목 상세 테이블
+        failures_group = ttk.LabelFrame(main_layout, text="❌ 실패 항목 상세", padding=10)
+        failures_group.grid(row=3, column=0, sticky='nsew', pady=(0, 10))
+        
+        # 실패 항목 테이블 생성
+        table_frame = ttk.Frame(failures_group)
+        table_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 테이블 컬럼 정의
+        columns = ("parameter", "default_value", "file_value", "pass_fail", "issue_type", "description")
+        
+        self.tbl_failures = ttk.Treeview(table_frame, columns=columns, show='headings', height=10)
+        
+        # 컬럼 헤더 설정
+        self.tbl_failures.heading("parameter", text="파라미터명")
+        self.tbl_failures.heading("default_value", text="Default Value")
+        self.tbl_failures.heading("file_value", text="File Value")
+        self.tbl_failures.heading("pass_fail", text="Pass/Fail")
+        self.tbl_failures.heading("issue_type", text="Issue Type")
+        self.tbl_failures.heading("description", text="설명")
+        
+        # 컬럼 너비 설정
+        self.tbl_failures.column("parameter", width=150)
+        self.tbl_failures.column("default_value", width=120)
+        self.tbl_failures.column("file_value", width=120)
+        self.tbl_failures.column("pass_fail", width=80)
+        self.tbl_failures.column("issue_type", width=120)
+        self.tbl_failures.column("description", width=200)
+        
+        # 편집 불가 설정 (이미 기본값)
+        
+        # 스크롤바 추가
+        scrollbar_v = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.tbl_failures.yview)
+        scrollbar_h = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=self.tbl_failures.xview)
+        self.tbl_failures.configure(yscrollcommand=scrollbar_v.set, xscrollcommand=scrollbar_h.set)
+        
+        # 테이블과 스크롤바 배치
+        self.tbl_failures.grid(row=0, column=0, sticky='nsew')
+        scrollbar_v.grid(row=0, column=1, sticky='ns')
+        scrollbar_h.grid(row=1, column=0, sticky='ew')
+        
+        table_frame.grid_rowconfigure(0, weight=1)
+        table_frame.grid_columnconfigure(0, weight=1)
+        
+        # (5행) 액션 버튼들
+        button_frame = ttk.Frame(main_layout)
+        button_frame.grid(row=4, column=0, sticky='ew', pady=(10, 0))
+        
+        # 버튼 우측 정렬
+        ttk.Button(button_frame, text="🖨️ 인쇄", 
+                  command=self._on_print_report).pack(side=tk.RIGHT, padx=(5, 0))
+        
+        ttk.Button(button_frame, text="📄 PDF 저장", 
+                  command=self._on_save_pdf).pack(side=tk.RIGHT, padx=(5, 0))
+
+    def _update_final_report_tab(self, results: list):
+        """최종 보고서 탭 업데이트"""
+        if not hasattr(self, 'tab_report') or not results:
+            return
+            
+        from datetime import datetime
+        
+        # 1. 통계 계산
+        total_items = len(results)
+        fail_items = [r for r in results if r.get('pass_fail', '').upper() == 'FAIL']
+        pass_items = [r for r in results if r.get('pass_fail', '').upper() == 'PASS']
+        critical_items = [r for r in results if r.get('severity', '') == '높음']
+        
+        pass_count = len(pass_items)
+        fail_count = len(fail_items)
+        critical_count = len(critical_items)
+        pass_rate = (pass_count / total_items * 100) if total_items > 0 else 0
+        
+        # 2. 최종 판정 설정
+        overall_result = "PASS" if fail_count == 0 else "FAIL"
+        result_color = 'green' if overall_result == "PASS" else 'red'
+        result_bg = '#e8f5e8' if overall_result == "PASS" else '#ffe8e8'
+        
+        self.lbl_overall_result.config(
+            text=f"최종 판정: {overall_result}",
+            fg=result_color,
+            bg=result_bg
+        )
+        
+        # 3. 검수 정보 업데이트
+        equipment_type = self.equipment_type_var.get() or "미선택"
+        check_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        include_all = "전체 포함" if getattr(self, 'chk_include_all_var', tk.BooleanVar()).get() else "일반"
+        
+        self.lbl_equipment_type.config(text=f"장비 유형: {equipment_type}")
+        self.lbl_check_date.config(text=f"검수 일시: {check_date}")
+        self.lbl_total_items.config(text=f"총 항목 수: {total_items}개")
+        self.lbl_check_mode.config(text=f"검수 모드: {include_all}")
+        
+        # 4. 핵심 요약 업데이트
+        self.lbl_pass_count.config(text=f"통과: {pass_count}개")
+        self.lbl_fail_count.config(text=f"실패: {fail_count}개")
+        self.lbl_critical_count.config(text=f"심각: {critical_count}개")
+        self.lbl_pass_rate.config(text=f"통과율: {pass_rate:.1f}%")
+        
+        # 5. 실패 항목 테이블 업데이트
+        # 기존 항목 삭제
+        for item in self.tbl_failures.get_children():
+            self.tbl_failures.delete(item)
+            
+        # 실패 항목만 추가
+        for result in fail_items:
+            values = (
+                result.get('parameter', ''),
+                result.get('default_value', ''),
+                result.get('file_value', ''),
+                result.get('pass_fail', ''),
+                result.get('issue_type', ''),
+                result.get('description', '')
+            )
+            
+            # 심각도에 따른 태그 설정
+            severity = result.get('severity', '낮음')
+            tag = f"severity_{severity}"
+            
+            self.tbl_failures.insert("", "end", values=values, tags=(tag,))
+        
+        # 테이블 태그 색상 설정
+        self.tbl_failures.tag_configure("severity_높음", background="#ffebee", foreground="#c62828")
+        self.tbl_failures.tag_configure("severity_중간", background="#fff3e0", foreground="#ef6c00")
+        self.tbl_failures.tag_configure("severity_낮음", background="#f3e5f5", foreground="#7b1fa2")
+
+    def _on_print_report(self):
+        """보고서 인쇄"""
+        try:
+            # 간단한 텍스트 형태로 보고서 생성
+            report_content = self._generate_text_report()
+            
+            # 임시 파일로 저장하고 기본 인쇄 프로그램으로 열기
+            import tempfile
+            import os
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as temp_file:
+                temp_file.write(report_content)
+                temp_file_path = temp_file.name
+            
+            # 기본 텍스트 에디터로 열기 (사용자가 인쇄 가능)
+            if os.name == 'nt':  # Windows
+                os.startfile(temp_file_path)
+            elif os.name == 'posix':  # macOS, Linux
+                os.system(f'open "{temp_file_path}"' if os.uname().sysname == 'Darwin' else f'xdg-open "{temp_file_path}"')
+                
+        except Exception as e:
+            messagebox.showerror("오류", f"인쇄 준비 중 오류가 발생했습니다: {str(e)}")
+
+    def _on_save_pdf(self):
+        """PDF로 보고서 저장"""
+        try:
+            from tkinter import filedialog
+            
+            # 저장할 파일 경로 선택
+            file_path = filedialog.asksaveasfilename(
+                title="QC 검수 보고서 저장",
+                defaultextension=".txt",
+                filetypes=[
+                    ("텍스트 파일", "*.txt"),
+                    ("CSV 파일", "*.csv"),
+                    ("모든 파일", "*.*")
+                ]
+            )
+            
+            if file_path:
+                if file_path.endswith('.csv'):
+                    self._save_as_csv(file_path)
+                else:
+                    self._save_as_text(file_path)
+                    
+                messagebox.showinfo("저장 완료", f"보고서가 저장되었습니다:\n{file_path}")
+                
+        except Exception as e:
+            messagebox.showerror("오류", f"보고서 저장 중 오류가 발생했습니다: {str(e)}")
+
+    def _generate_text_report(self):
+        """텍스트 형태 보고서 생성"""
+        from datetime import datetime
+        
+        # 보고서 헤더
+        report = []
+        report.append("=" * 60)
+        report.append("QC 검수 최종 보고서")
+        report.append("=" * 60)
+        report.append("")
+        
+        # 검수 정보
+        equipment_type = self.equipment_type_var.get() or "미선택"
+        check_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        include_all = "전체 포함" if getattr(self, 'chk_include_all_var', tk.BooleanVar()).get() else "일반"
+        
+        report.append("📋 검수 정보")
+        report.append("-" * 30)
+        report.append(f"장비 유형: {equipment_type}")
+        report.append(f"검수 일시: {check_date}")
+        report.append(f"총 항목 수: {len(self.qc_results)}개")
+        report.append(f"검수 모드: {include_all}")
+        report.append("")
+        
+        # 요약 통계
+        fail_items = [r for r in self.qc_results if r.get('pass_fail', '').upper() == 'FAIL']
+        pass_items = [r for r in self.qc_results if r.get('pass_fail', '').upper() == 'PASS']
+        critical_items = [r for r in self.qc_results if r.get('severity', '') == '높음']
+        
+        pass_count = len(pass_items)
+        fail_count = len(fail_items)
+        critical_count = len(critical_items)
+        pass_rate = (pass_count / len(self.qc_results) * 100) if self.qc_results else 0
+        overall_result = "PASS" if fail_count == 0 else "FAIL"
+        
+        report.append("📈 핵심 요약")
+        report.append("-" * 30)
+        report.append(f"최종 판정: {overall_result}")
+        report.append(f"통과: {pass_count}개")
+        report.append(f"실패: {fail_count}개")
+        report.append(f"심각: {critical_count}개")
+        report.append(f"통과율: {pass_rate:.1f}%")
+        report.append("")
+        
+        # 실패 항목 상세
+        if fail_items:
+            report.append("❌ 실패 항목 상세")
+            report.append("-" * 50)
+            for i, item in enumerate(fail_items, 1):
+                report.append(f"{i}. {item.get('parameter', 'N/A')}")
+                report.append(f"   Default Value: {item.get('default_value', 'N/A')}")
+                report.append(f"   File Value: {item.get('file_value', 'N/A')}")
+                report.append(f"   Pass/Fail: {item.get('pass_fail', 'N/A')}")
+                report.append(f"   Issue Type: {item.get('issue_type', 'N/A')}")
+                report.append(f"   설명: {item.get('description', 'N/A')}")
+                report.append("")
+        else:
+            report.append("✅ 모든 항목이 통과했습니다.")
+            report.append("")
+        
+        report.append("=" * 60)
+        report.append("보고서 생성 완료")
+        report.append("=" * 60)
+        
+        return "\n".join(report)
+
+    def _save_as_text(self, file_path):
+        """텍스트 파일로 저장"""
+        report_content = self._generate_text_report()
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(report_content)
+
+    def _save_as_csv(self, file_path):
+        """CSV 파일로 저장"""
+        import csv
+        
+        with open(file_path, 'w', newline='', encoding='utf-8-sig') as csvfile:
+            writer = csv.writer(csvfile)
+            
+            # 헤더
+            writer.writerow(['파라미터명', 'Default Value', 'File Value', 'Pass/Fail', 'Issue Type', '설명', '심각도'])
+            
+            # 데이터
+            for result in self.qc_results:
+                writer.writerow([
+                    result.get('parameter', ''),
+                    result.get('default_value', ''),
+                    result.get('file_value', ''),
+                    result.get('pass_fail', ''),
+                    result.get('issue_type', ''),
+                    result.get('description', ''),
+                    result.get('severity', '')
+                ])
