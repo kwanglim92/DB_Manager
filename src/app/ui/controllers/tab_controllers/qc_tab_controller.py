@@ -105,187 +105,189 @@ class QCTabController(TabController):
             self._create_basic_qc_ui()
     
     def _create_enhanced_qc_ui(self):
-        """향상된 QC UI 생성"""
-        # 🎨 상단 컨트롤 패널
-        control_panel = ttk.LabelFrame(self.tab_frame, text="🎛️ QC 검수 설정", padding=15)
-        control_panel.pack(fill=tk.X, padx=10, pady=10)
-
-        # 첫 번째 행: 장비 유형 및 모드 선택
-        row1 = ttk.Frame(control_panel)
-        row1.pack(fill=tk.X, pady=(0, 10))
-
+        """엔지니어 스타일 QC UI 생성 - Default DB 관리 스타일 적용"""
+        # 상단 제어 패널 - 배경색과 패딩 개선
+        control_frame = ttk.Frame(self.tab_frame, style="Control.TFrame")
+        control_frame.pack(fill=tk.X, padx=15, pady=10)
+        
+        # 장비 유형 관리 섹션
+        equipment_frame = ttk.LabelFrame(control_frame, text="Equipment Type Selection", padding=12)
+        equipment_frame.pack(fill=tk.X, pady=(0, 8))
+        
         # 장비 유형 선택
-        ttk.Label(row1, text="🏭 장비 유형:", font=('Arial', 9, 'bold')).pack(side=tk.LEFT, padx=(0, 5))
+        type_select_frame = ttk.Frame(equipment_frame)
+        type_select_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        ttk.Label(type_select_frame, text="Equipment Type:", font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(0, 8))
         self.equipment_type_var = tk.StringVar()
-        self.equipment_type_combo = ttk.Combobox(row1, textvariable=self.equipment_type_var, 
-                                               state="readonly", width=25)
-        self.equipment_type_combo.pack(side=tk.LEFT, padx=(0, 15))
+        self.equipment_type_combo = ttk.Combobox(type_select_frame, textvariable=self.equipment_type_var, 
+                                               state="readonly", width=40, font=("Segoe UI", 9))
+        self.equipment_type_combo.pack(side=tk.LEFT, padx=(0, 12))
         self.equipment_type_combo.bind('<<ComboboxSelected>>', self._on_equipment_type_changed)
         
         # 새로고침 버튼
-        refresh_btn = ttk.Button(row1, text="🔄 새로고침", command=self._refresh_equipment_types)
+        refresh_btn = ttk.Button(type_select_frame, text="Refresh", 
+                               command=self._refresh_equipment_types, width=10)
         refresh_btn.pack(side=tk.LEFT, padx=(0, 15))
 
-        # 검수 모드 선택 (숨김 처리 - 리팩토링 중)
-        self.qc_mode_label = ttk.Label(row1, text="🔍 검수 모드:", font=('Arial', 9, 'bold'))
-        self.qc_mode_label.pack(side=tk.LEFT, padx=(0, 5))
-        self.qc_mode_label.pack_forget()  # 숨김 처리
+        # QC 실행 관리 섹션
+        qc_frame = ttk.LabelFrame(control_frame, text="QC Execution Control", padding=12)
+        qc_frame.pack(fill=tk.X, pady=(0, 8))
         
-        self.qc_mode_var = tk.StringVar(value="performance")
-        
-        self.performance_radio = ttk.Radiobutton(row1, text="⚡ Performance 중점", 
-                                          variable=self.qc_mode_var, value="performance",
-                                          command=self._on_mode_changed)
-        self.performance_radio.pack(side=tk.LEFT, padx=(0, 10))
-        self.performance_radio.pack_forget()  # 숨김 처리
-        
-        self.full_radio = ttk.Radiobutton(row1, text="📋 전체 검수", 
-                                   variable=self.qc_mode_var, value="full",
-                                   command=self._on_mode_changed)
-        self.full_radio.pack(side=tk.LEFT, padx=(0, 10))
-        self.full_radio.pack_forget()  # 숨김 처리
+        # QC 실행 버튼들
+        qc_buttons_frame = ttk.Frame(qc_frame)
+        qc_buttons_frame.pack(fill=tk.X)
 
-        # 두 번째 행: 검수 옵션 및 실행 버튼
-        row2 = ttk.Frame(control_panel)
-        row2.pack(fill=tk.X, pady=(5, 0))
-
-        # 검수 옵션
-        options_frame = ttk.LabelFrame(row2, text="🔧 검수 옵션", padding=10)
-        options_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 15))
-
-        self.qc_option_vars = {
-            'check_performance': tk.BooleanVar(value=True),
-            'check_naming': tk.BooleanVar(value=True),
-            'check_ranges': tk.BooleanVar(value=True),
-            'check_trends': tk.BooleanVar(value=False)
-        }
-
-        ttk.Checkbutton(options_frame, text="Performance 중점 검사", 
-                       variable=self.qc_option_vars['check_performance']).pack(anchor='w')
-        ttk.Checkbutton(options_frame, text="명명 규칙 검사", 
-                       variable=self.qc_option_vars['check_naming']).pack(anchor='w')
-        ttk.Checkbutton(options_frame, text="값 범위 분석", 
-                       variable=self.qc_option_vars['check_ranges']).pack(anchor='w')
-        ttk.Checkbutton(options_frame, text="데이터 트렌드 분석", 
-                       variable=self.qc_option_vars['check_trends']).pack(anchor='w')
-
-        # 신규 전체 항목 포함 체크박스 추가
+        # 전체 항목 포함 체크박스
         self.chk_include_all_var = tk.BooleanVar(value=False)
-        self.chk_include_all = ttk.Checkbutton(options_frame, text="전체 항목 포함", 
+        self.chk_include_all = ttk.Checkbutton(qc_buttons_frame, text="Include All Items", 
                                               variable=self.chk_include_all_var)
-        self.chk_include_all.pack(anchor='w')
+        self.chk_include_all.pack(side=tk.LEFT, padx=(0, 15))
 
-        # 실행 버튼 영역
-        action_frame = ttk.Frame(row2)
-        action_frame.pack(side=tk.RIGHT, fill=tk.Y)
-
-        # 메인 QC 실행 버튼
-        self.qc_run_btn = ttk.Button(action_frame, text="🚀 QC 검수 실행", 
-                                   command=self._handle_run_qc_check)
-        self.qc_run_btn.pack(pady=(0, 5))
-
-        # 파일 선택 버튼
-        self.file_select_btn = ttk.Button(action_frame, text="📁 검수 파일 선택", 
-                                        command=self._handle_select_files)
-        self.file_select_btn.pack(pady=(0, 5))
+        # QC 실행 버튼 (메인 기능)
+        self.qc_run_btn = ttk.Button(qc_buttons_frame, text="Execute QC Inspection", 
+                                   command=self._handle_run_qc_check, width=18)
+        self.qc_run_btn.pack(side=tk.LEFT, padx=(0, 12))
 
         # 결과 내보내기 버튼
-        self.export_btn = ttk.Button(action_frame, text="📤 결과 내보내기", 
+        self.export_btn = ttk.Button(qc_buttons_frame, text="Export Results", 
                                    command=self._handle_export_results,
-                                   state="disabled")
-        self.export_btn.pack()
+                                   state="disabled", width=13)
+        self.export_btn.pack(side=tk.LEFT)
 
-        # 🎨 메인 결과 영역 - 탭 구조
-        main_frame = ttk.Frame(self.tab_frame)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        # QC 결과 영역
+        results_container = ttk.LabelFrame(self.tab_frame, text="QC Inspection Results", padding=10)
+        results_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 8))
 
         # 결과 탭 노트북
-        self.results_notebook = ttk.Notebook(main_frame)
+        self.results_notebook = ttk.Notebook(results_container)
         self.results_notebook.pack(fill=tk.BOTH, expand=True)
 
-        # 탭 1: 검수 결과 목록
+        # 탭 1: 검수 결과 목록 (기본)
         self._create_results_tab()
         
-        # 탭 2: 통계 및 요약 (숨김 처리 - 리팩토링 중)
-        self.statistics_tab = self._create_statistics_tab()
-        
-        # 탭 3: 시각화 (숨김 처리 - 리팩토링 중)
-        self.visualization_tab = self._create_visualization_tab()
-        
-        # 탭 4: 최종 보고서 (신규 추가)
+        # 탭 2: 최종 보고서 (메인 기능)
         self._create_final_report_tab()
 
-        # 🎨 하단 상태 표시줄
-        self._create_status_bar()
+        # 상태 정보 섹션
+        status_container = ttk.LabelFrame(self.tab_frame, text="Status Information", padding=10)
+        status_container.pack(fill=tk.X, padx=15, pady=(0, 8))
+        
+        status_frame = ttk.Frame(status_container)
+        status_frame.pack(fill=tk.X)
+        
+        # 상태 메시지
+        self.status_label = ttk.Label(status_frame, text="Please select an equipment type and execute QC inspection.", 
+                                    font=("Segoe UI", 9))
+        self.status_label.pack(side=tk.LEFT)
+        
+        # 진행률 표시
+        self.progress_bar = ttk.Progressbar(status_frame, mode='determinate', length=200)
+        self.progress_bar.pack(side=tk.RIGHT, padx=(10, 0))
         
         # 초기 데이터 로드
         self._load_initial_data()
 
     def _create_basic_qc_ui(self):
-        """기본 QC UI 생성 (Enhanced QC가 없는 경우)"""
-        # 기본 QC UI 구현
-        control_frame = ttk.LabelFrame(self.tab_frame, text="QC 검수 설정", padding=10)
-        control_frame.pack(fill=tk.X, padx=10, pady=10)
+        """엔지니어 스타일 기본 QC UI 생성 - Default DB 관리 스타일 적용"""
+        # 상단 제어 패널 - 배경색과 패딩 개선
+        control_frame = ttk.Frame(self.tab_frame, style="Control.TFrame")
+        control_frame.pack(fill=tk.X, padx=15, pady=10)
+        
+        # 장비 유형 관리 섹션
+        equipment_frame = ttk.LabelFrame(control_frame, text="Equipment Type Selection", padding=12)
+        equipment_frame.pack(fill=tk.X, pady=(0, 8))
         
         # 장비 유형 선택
-        ttk.Label(control_frame, text="장비 유형:").pack(side=tk.LEFT, padx=(0, 5))
+        type_select_frame = ttk.Frame(equipment_frame)
+        type_select_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        ttk.Label(type_select_frame, text="Equipment Type:", font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(0, 8))
         self.equipment_type_var = tk.StringVar()
-        self.equipment_type_combo = ttk.Combobox(control_frame, textvariable=self.equipment_type_var, 
-                                               state="readonly", width=25)
-        self.equipment_type_combo.pack(side=tk.LEFT, padx=(0, 15))
+        self.equipment_type_combo = ttk.Combobox(type_select_frame, textvariable=self.equipment_type_var, 
+                                               state="readonly", width=40, font=("Segoe UI", 9))
+        self.equipment_type_combo.pack(side=tk.LEFT, padx=(0, 12))
+        
+        # 새로고침 버튼
+        refresh_btn = ttk.Button(type_select_frame, text="Refresh", 
+                               command=self._refresh_equipment_types, width=10)
+        refresh_btn.pack(side=tk.LEFT, padx=(0, 15))
+
+        # QC 실행 관리 섹션
+        qc_frame = ttk.LabelFrame(control_frame, text="QC Execution Control", padding=12)
+        qc_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        # QC 실행 버튼들
+        qc_buttons_frame = ttk.Frame(qc_frame)
+        qc_buttons_frame.pack(fill=tk.X)
+        
+        # 전체 항목 포함 체크박스
+        self.chk_include_all_var = tk.BooleanVar(value=False)
+        self.chk_include_all = ttk.Checkbutton(qc_buttons_frame, text="Include All Items", 
+                                              variable=self.chk_include_all_var)
+        self.chk_include_all.pack(side=tk.LEFT, padx=(0, 15))
         
         # QC 실행 버튼
-        self.qc_run_btn = ttk.Button(control_frame, text="QC 검수 실행", 
-                                   command=self._handle_run_basic_qc)
-        self.qc_run_btn.pack(side=tk.LEFT)
-        
-        # 결과 영역
-        results_frame = ttk.LabelFrame(self.tab_frame, text="검수 결과", padding=10)
-        results_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # 기본 결과 트리뷰
-        columns = ("parameter", "issue_type", "description", "severity")
-        headings = {
-            "parameter": "파라미터", 
-            "issue_type": "문제 유형", 
-            "description": "설명", 
-            "severity": "심각도"
-        }
-        column_widths = {
-            "parameter": 200, 
-            "issue_type": 150, 
-            "description": 300, 
-            "severity": 100
-        }
+        self.qc_run_btn = ttk.Button(qc_buttons_frame, text="Execute QC Inspection", 
+                                   command=self._handle_run_qc_check, width=18)
+        self.qc_run_btn.pack(side=tk.LEFT, padx=(0, 12))
 
-        result_frame, self.result_tree = create_treeview_with_scrollbar(
-            results_frame, columns, headings, column_widths, height=15)
-        result_frame.pack(fill=tk.BOTH, expand=True)
+        # 결과 내보내기 버튼
+        self.export_btn = ttk.Button(qc_buttons_frame, text="Export Results", 
+                                   command=self._handle_export_results,
+                                   state="disabled", width=13)
+        self.export_btn.pack(side=tk.LEFT)
+        
+        # QC 결과 영역
+        results_container = ttk.LabelFrame(self.tab_frame, text="QC Inspection Results", padding=10)
+        results_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 8))
+
+        # 결과 탭 노트북
+        self.results_notebook = ttk.Notebook(results_container)
+        self.results_notebook.pack(fill=tk.BOTH, expand=True)
+
+        # 탭 1: 검수 결과 목록
+        self._create_results_tab()
+        
+        # 탭 2: 최종 보고서 (메인 기능)
+        self._create_final_report_tab()
+
+        # 상태 정보 섹션
+        status_container = ttk.LabelFrame(self.tab_frame, text="Status Information", padding=10)
+        status_container.pack(fill=tk.X, padx=15, pady=(0, 8))
+        
+        status_frame = ttk.Frame(status_container)
+        status_frame.pack(fill=tk.X)
+        
+        # 상태 메시지
+        self.status_label = ttk.Label(status_frame, text="Please select an equipment type and execute QC inspection.", 
+                                    font=("Segoe UI", 9))
+        self.status_label.pack(side=tk.LEFT)
+        
+        # 진행률 표시
+        self.progress_bar = ttk.Progressbar(status_frame, mode='determinate', length=200)
+        self.progress_bar.pack(side=tk.RIGHT, padx=(10, 0))
         
         self._load_initial_data()
 
     def _create_results_tab(self):
         """검수 결과 탭 생성"""
         results_tab = ttk.Frame(self.results_notebook)
-        self.results_notebook.add(results_tab, text="📋 검수 결과")
+        self.results_notebook.add(results_tab, text="QC Results List")
 
         # 검수 결과 트리뷰 (향상된 컬럼 구조)
-        columns = ("parameter", "issue_type", "description", "severity", "category", "recommendation")
+        columns = ("parameter", "issue_type", "description", "severity")
         headings = {
-            "parameter": "파라미터", 
-            "issue_type": "문제 유형", 
-            "description": "상세 설명", 
-            "severity": "심각도",
-            "category": "카테고리",
-            "recommendation": "권장사항"
+            "parameter": "Parameter", 
+            "issue_type": "Issue Type", 
+            "description": "Description", 
+            "severity": "Severity"
         }
         column_widths = {
-            "parameter": 150, 
-            "issue_type": 120, 
-            "description": 250, 
-            "severity": 80,
-            "category": 100,
-            "recommendation": 200
+            "parameter": 200, 
+            "issue_type": 150, 
+            "description": 300, 
+            "severity": 100
         }
 
         results_frame, self.result_tree = create_treeview_with_scrollbar(
@@ -295,27 +297,6 @@ class QCTabController(TabController):
         # 트리뷰 이벤트 바인딩
         self.result_tree.bind('<<TreeviewSelect>>', self._on_result_selected)
         self.result_tree.bind('<Double-1>', self._on_result_double_click)
-
-    def _create_statistics_tab(self):
-        """통계 및 요약 탭 생성 (숨김 처리 - 리팩토링 중)"""
-        stats_tab = ttk.Frame(self.results_notebook)
-        # self.results_notebook.add(stats_tab, text="📊 통계 요약")  # 숨김 처리
-
-        # 통계 요약 영역
-        self.stats_frame = ttk.Frame(stats_tab)
-        self.stats_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        return stats_tab  # 탭 참조 반환 (나중에 삭제 용도)
-
-    def _create_visualization_tab(self):
-        """시각화 탭 생성 (숨김 처리 - 리팩토링 중)"""
-        chart_tab = ttk.Frame(self.results_notebook)
-        # self.results_notebook.add(chart_tab, text="📈 시각화")  # 숨김 처리
-
-        self.chart_frame = ttk.Frame(chart_tab)
-        self.chart_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        return chart_tab  # 탭 참조 반환 (나중에 삭제 용도)
 
     def _create_status_bar(self):
         """상태 표시줄 생성"""
@@ -367,11 +348,141 @@ class QCTabController(TabController):
             
             self._update_status(f"📋 장비 유형 선택: {selected_name}")
 
-    def _on_mode_changed(self):
-        """검수 모드 변경 이벤트"""
-        self.qc_mode = self.qc_mode_var.get()
-        mode_text = "Performance 중점" if self.qc_mode == "performance" else "전체 검수"
-        self._update_status(f"🔍 검수 모드: {mode_text}")
+    def _handle_run_qc_check(self, event=None):
+        """QC 검수 실행 처리 - 단순화됨"""
+        if not self.current_equipment_type:
+            self.show_warning("Warning", "Please select an equipment type first.")
+            return
+
+        try:
+            self.qc_status = "running"
+            self._update_status("QC Inspection in progress...")
+            self.qc_run_btn.config(state="disabled")
+            self.progress_bar.config(value=10)
+
+            # 기본 QC 검수 실행 (검수 옵션 없이)
+            self._run_basic_qc()
+
+        except Exception as e:
+            self.qc_status = "error"
+            self._update_status("QC Inspection failed")
+            self.show_error("Error", f"An error occurred during QC inspection: {str(e)}")
+        finally:
+            self.qc_run_btn.config(state="normal")
+
+    def _run_basic_qc(self):
+        """기본 QC 검수 실행 - 단순화됨"""
+        # 사용자 요청: 검수 대상 필터링 로직 추가
+        include_all_items = self.chk_include_all_var.get()
+        
+        # DBManager의 QC 검수 메서드 직접 호출 (execute_command 대신)
+        try:
+            # DBManager의 perform_qc_check 메서드 호출
+            if hasattr(self.viewmodel, 'perform_qc_check'):
+                # 기존 QC 로직 실행
+                self.viewmodel.perform_qc_check()
+                
+                # 성공 시 콜백 호출
+                self._qc_check_complete(True, {'issues': []})
+            else:
+                # QC 기능을 직접 구현
+                self._run_direct_qc_check(include_all_items)
+                
+        except Exception as e:
+            # 실패 시 콜백 호출
+            self._qc_check_complete(False, {'error': str(e)})
+
+    def _run_direct_qc_check(self, include_all_items=False):
+        """QC 검수 직접 실행"""
+        try:
+            # 장비 유형 ID 확인
+            if not self.current_equipment_type:
+                raise Exception("장비 유형이 선택되지 않았습니다.")
+            
+            # DBManager의 DB 스키마를 통해 데이터 조회
+            if hasattr(self.viewmodel, 'db_schema') and self.viewmodel.db_schema:
+                # Performance 항목만 또는 전체 항목 조회
+                performance_only = not include_all_items  # 전체 항목 포함이면 performance_only=False
+                
+                data = self.viewmodel.db_schema.get_default_values(
+                    self.current_equipment_type, 
+                    performance_only=performance_only
+                )
+                
+                if not data:
+                    raise Exception("검수할 데이터가 없습니다.")
+                
+                # 기본 QC 검사 수행
+                import pandas as pd
+                df = pd.DataFrame(data, columns=[
+                    "id", "parameter_name", "default_value", "min_spec", "max_spec", "type_name",
+                    "occurrence_count", "total_files", "confidence_score", "source_files", "description",
+                    "module_name", "part_name", "item_type", "is_performance"
+                ])
+                
+                # QCValidator로 기본 검사 수행
+                from app.qc import QCValidator
+                results = QCValidator.run_all_checks(df, "검수")
+                
+                # 결과를 보고서 형식으로 변환
+                qc_results = []
+                for result in results:
+                    qc_results.append({
+                        'parameter': result.get('parameter', ''),
+                        'default_value': 'N/A',
+                        'file_value': 'N/A', 
+                        'pass_fail': 'FAIL',
+                        'issue_type': result.get('issue_type', ''),
+                        'description': result.get('description', ''),
+                        'severity': result.get('severity', '낮음')
+                    })
+                
+                # 성공 콜백 호출
+                self._qc_check_complete(True, {'issues': qc_results})
+                
+            else:
+                raise Exception("데이터베이스 스키마를 사용할 수 없습니다.")
+                
+        except Exception as e:
+            # 실패 콜백 호출
+            self._qc_check_complete(False, {'error': str(e)})
+
+    def _qc_check_complete(self, success: bool, results: Dict):
+        """QC 검수 완료 콜백"""
+        if success:
+            self.qc_status = "complete"
+            self.qc_results = results.get('issues', [])
+            self._display_qc_results()
+            self._update_status(f"✅ QC Inspection completed - {len(self.qc_results)} items processed")
+            
+            # 사용자 요청: 보고서 생성 호출 및 최종 보고서 탭으로 이동
+            self._update_final_report_tab(self.qc_results)
+            self.results_notebook.select(1)  # 최종 보고서 탭 선택
+            
+            # 내보내기 버튼 활성화
+            self.export_btn.config(state="normal")
+            self.progress_bar.config(value=100)
+        else:
+            self.qc_status = "error"
+            error_msg = results.get('error', 'Unknown error occurred')
+            self._update_status(f"QC Inspection failed: {error_msg}")
+            self.show_error("QC Inspection Error", error_msg)
+            self.progress_bar.config(value=0)
+
+    def _display_qc_results(self):
+        """QC 결과 표시 - 단순화됨"""
+        # 기존 결과 삭제
+        for item in self.result_tree.get_children():
+            self.result_tree.delete(item)
+        
+        # 결과 표시
+        for result in self.qc_results:
+            self.result_tree.insert("", "end", values=(
+                result.get("parameter", ""),
+                result.get("issue_type", ""),
+                result.get("description", ""),
+                result.get("severity", "낮음")
+            ))
 
     def _on_result_selected(self, event=None):
         """검수 결과 선택 이벤트"""
@@ -380,7 +491,7 @@ class QCTabController(TabController):
             item = self.result_tree.item(selection[0])
             values = item['values']
             if values:
-                # 선택된 항목의 상세 정보 표시 (향후 구현)
+                # 선택된 항목의 상세 정보 표시
                 pass
 
     def _on_result_double_click(self, event=None):
@@ -390,156 +501,8 @@ class QCTabController(TabController):
             item = self.result_tree.item(selection[0])
             values = item['values']
             if values:
-                # 상세 분석 다이얼로그 표시 (향후 구현)
+                # 상세 분석 다이얼로그 표시
                 self.show_info("상세 정보", f"파라미터: {values[0]}\n문제: {values[1]}\n설명: {values[2]}")
-
-    def _handle_run_qc_check(self, event=None):
-        """QC 검수 실행 처리"""
-        if not self.current_equipment_type:
-            self.show_warning("알림", "장비 유형을 먼저 선택해주세요.")
-            return
-
-        try:
-            self.qc_status = "running"
-            self._update_status("🔄 QC 검수 실행 중...")
-            self.qc_run_btn.config(state="disabled")
-            self.progress_bar.config(value=10)
-
-            # Enhanced QC 또는 기본 QC 실행
-            if self.enhanced_qc_available:
-                self._run_enhanced_qc()
-            else:
-                self._run_basic_qc()
-
-        except Exception as e:
-            self.qc_status = "error"
-            self._update_status("❌ QC 검수 실패")
-            self.show_error("오류", f"QC 검수 중 오류가 발생했습니다: {str(e)}")
-        finally:
-            self.qc_run_btn.config(state="normal")
-
-    def _run_enhanced_qc(self):
-        """향상된 QC 검수 실행"""
-        # [신규 추가] 전체 항목 포함 체크박스 상태 확인
-        include_all = getattr(self, 'chk_include_all_var', tk.BooleanVar()).get()
-        
-        # Enhanced QC 기능 실행
-        # 실제 구현은 viewmodel을 통해 수행
-        self.viewmodel.execute_command('run_enhanced_qc_check', {
-            'equipment_type_id': self.current_equipment_type,
-            'mode': self.qc_mode,
-            'options': {key: var.get() for key, var in self.qc_option_vars.items()},
-            'include_all_items': include_all,  # 전체 항목 포함 여부 추가
-            'callback': self._qc_check_complete
-        })
-
-    def _run_basic_qc(self):
-        """기본 QC 검수 실행"""
-        # [신규 추가] 전체 항목 포함 체크박스 상태 확인
-        include_all = getattr(self, 'chk_include_all_var', tk.BooleanVar()).get()
-        
-        # 기본 QC 기능 실행
-        self.viewmodel.execute_command('run_basic_qc_check', {
-            'equipment_type_id': self.current_equipment_type,
-            'include_all_items': include_all,  # 전체 항목 포함 여부 추가
-            'callback': self._qc_check_complete
-        })
-
-    def _handle_run_basic_qc(self):
-        """기본 QC 검수 실행 (기본 UI용)"""
-        if not self.current_equipment_type:
-            self.show_warning("알림", "장비 유형을 먼저 선택해주세요.")
-            return
-        
-        self._run_basic_qc()
-
-    def _qc_check_complete(self, success: bool, results: Dict):
-        """QC 검수 완료 콜백"""
-        if success:
-            self.qc_status = "complete"
-            self.qc_results = results.get('issues', [])
-            self._display_qc_results()
-            self._update_status(f"✅ QC 검수 완료 - {len(self.qc_results)}개 이슈 발견")
-            self.export_btn.config(state="normal")
-            
-            # [신규 추가] 최종 보고서 탭 업데이트 및 탭 전환
-            self._update_final_report_tab(self.qc_results)
-            if hasattr(self, 'tab_report'):
-                self.results_notebook.select(self.tab_report)  # 최종 보고서 탭으로 전환
-        else:
-            self.qc_status = "error"
-            self._update_status("❌ QC 검수 실패")
-            self.show_error("오류", f"QC 검수 중 오류가 발생했습니다: {results.get('error', '알 수 없는 오류')}")
-        
-        self.progress_bar.config(value=100 if success else 0)
-
-    def _display_qc_results(self):
-        """QC 검수 결과 표시"""
-        # 기존 결과 삭제
-        for item in self.result_tree.get_children():
-            self.result_tree.delete(item)
-
-        # 새 결과 추가
-        for result in self.qc_results:
-            severity = result.get("severity", "낮음")
-            tag = f"severity_{severity}"
-            
-            if self.enhanced_qc_available:
-                values = (
-                    result.get("parameter", ""),
-                    result.get("issue_type", ""),
-                    result.get("description", ""),
-                    severity,
-                    result.get("category", ""),
-                    result.get("recommendation", "")
-                )
-            else:
-                values = (
-                    result.get("parameter", ""),
-                    result.get("issue_type", ""),
-                    result.get("description", ""),
-                    severity
-                )
-            
-            self.result_tree.insert("", "end", values=values, tags=(tag,))
-
-        # 트리뷰 태그 색상 설정
-        self.result_tree.tag_configure("severity_높음", background="#ffebee", foreground="#c62828")
-        self.result_tree.tag_configure("severity_중간", background="#fff3e0", foreground="#ef6c00")
-        self.result_tree.tag_configure("severity_낮음", background="#f3e5f5", foreground="#7b1fa2")
-
-        # 통계 업데이트
-        if hasattr(self, 'stats_frame'):
-            self._update_statistics()
-
-    def _update_statistics(self):
-        """통계 정보 업데이트"""
-        # 기존 통계 위젯 삭제
-        for widget in self.stats_frame.winfo_children():
-            widget.destroy()
-
-        if not self.qc_results:
-            ttk.Label(self.stats_frame, text="검수 결과가 없습니다.", 
-                     font=('Arial', 12)).pack(pady=20)
-            return
-
-        # 통계 정보 생성 및 표시
-        severity_counts = {"높음": 0, "중간": 0, "낮음": 0}
-        for result in self.qc_results:
-            severity = result.get("severity", "낮음")
-            severity_counts[severity] += 1
-
-        # 통계 표시
-        stats_label = ttk.Label(self.stats_frame, text="QC 검수 결과 통계", 
-                               font=('Arial', 14, 'bold'))
-        stats_label.pack(pady=(10, 20))
-
-        for severity, count in severity_counts.items():
-            if count > 0:
-                color = "#c62828" if severity == "높음" else "#ef6c00" if severity == "중간" else "#7b1fa2"
-                label = ttk.Label(self.stats_frame, text=f"• {severity}: {count}개", 
-                                 font=('Arial', 11), foreground=color)
-                label.pack(anchor='w', padx=20, pady=2)
 
     def _handle_select_files(self):
         """검수 파일 선택 처리"""
@@ -600,10 +563,10 @@ class QCTabController(TabController):
         }
 
     def _create_final_report_tab(self):
-        """최종 보고서 탭 생성 (신규)"""
+        """최종 보고서 탭 생성 - 영어 제목으로 통일"""
         # 최종 보고서 탭 프레임
         self.tab_report = ttk.Frame(self.results_notebook)
-        self.results_notebook.add(self.tab_report, text="📊 최종 보고서")
+        self.results_notebook.add(self.tab_report, text="Final QC Report")
         
         # 메인 그리드 레이아웃 설정
         main_layout = tk.Frame(self.tab_report)
@@ -614,59 +577,59 @@ class QCTabController(TabController):
         main_layout.grid_columnconfigure(0, weight=1)
         
         # (1행) 최종 판정 레이블
-        self.lbl_overall_result = tk.Label(main_layout, text="검수 대기 중", 
-                                          font=('Arial', 20, 'bold'),
+        self.lbl_overall_result = tk.Label(main_layout, text="QC Inspection Pending", 
+                                          font=('Segoe UI', 18, 'bold'),
                                           fg='blue', bg='white',
                                           relief='solid', borderwidth=2,
                                           pady=15)
         self.lbl_overall_result.grid(row=0, column=0, sticky='ew', pady=(0, 10))
         
         # (2행) 검수 정보 그룹박스
-        info_group = ttk.LabelFrame(main_layout, text="🔍 검수 정보", padding=10)
+        info_group = ttk.LabelFrame(main_layout, text="Inspection Information", padding=10)
         info_group.grid(row=1, column=0, sticky='ew', pady=(0, 10))
         
         # 검수 정보 레이블들
         info_frame = ttk.Frame(info_group)
         info_frame.pack(fill=tk.X)
         
-        self.lbl_equipment_type = ttk.Label(info_frame, text="장비 유형: -")
+        self.lbl_equipment_type = ttk.Label(info_frame, text="Equipment Type: -", font=("Segoe UI", 9))
         self.lbl_equipment_type.grid(row=0, column=0, sticky='w', padx=(0, 20))
         
-        self.lbl_check_date = ttk.Label(info_frame, text="검수 일시: -")
+        self.lbl_check_date = ttk.Label(info_frame, text="Inspection Date: -", font=("Segoe UI", 9))
         self.lbl_check_date.grid(row=0, column=1, sticky='w', padx=(0, 20))
         
-        self.lbl_total_items = ttk.Label(info_frame, text="총 항목 수: -")
+        self.lbl_total_items = ttk.Label(info_frame, text="Total Items: -", font=("Segoe UI", 9))
         self.lbl_total_items.grid(row=1, column=0, sticky='w', padx=(0, 20))
         
-        self.lbl_check_mode = ttk.Label(info_frame, text="검수 모드: -")
+        self.lbl_check_mode = ttk.Label(info_frame, text="Inspection Mode: -", font=("Segoe UI", 9))
         self.lbl_check_mode.grid(row=1, column=1, sticky='w', padx=(0, 20))
         
         # (3행) 핵심 요약 그룹박스
-        summary_group = ttk.LabelFrame(main_layout, text="📈 핵심 요약", padding=10)
+        summary_group = ttk.LabelFrame(main_layout, text="Summary Statistics", padding=10)
         summary_group.grid(row=2, column=0, sticky='ew', pady=(0, 10))
         
         # 요약 통계 프레임
         summary_frame = ttk.Frame(summary_group)
         summary_frame.pack(fill=tk.X)
         
-        self.lbl_pass_count = ttk.Label(summary_frame, text="통과: 0개", 
-                                       font=('Arial', 10, 'bold'), foreground='green')
+        self.lbl_pass_count = ttk.Label(summary_frame, text="Pass: 0 items", 
+                                       font=('Segoe UI', 10, 'bold'), foreground='green')
         self.lbl_pass_count.grid(row=0, column=0, sticky='w', padx=(0, 30))
         
-        self.lbl_fail_count = ttk.Label(summary_frame, text="실패: 0개", 
-                                       font=('Arial', 10, 'bold'), foreground='red')
+        self.lbl_fail_count = ttk.Label(summary_frame, text="Fail: 0 items", 
+                                       font=('Segoe UI', 10, 'bold'), foreground='red')
         self.lbl_fail_count.grid(row=0, column=1, sticky='w', padx=(0, 30))
         
-        self.lbl_critical_count = ttk.Label(summary_frame, text="심각: 0개", 
-                                          font=('Arial', 10, 'bold'), foreground='darkred')
+        self.lbl_critical_count = ttk.Label(summary_frame, text="Critical: 0 items", 
+                                          font=('Segoe UI', 10, 'bold'), foreground='darkred')
         self.lbl_critical_count.grid(row=0, column=2, sticky='w')
         
-        self.lbl_pass_rate = ttk.Label(summary_frame, text="통과율: 0%", 
-                                      font=('Arial', 12, 'bold'))
+        self.lbl_pass_rate = ttk.Label(summary_frame, text="Pass Rate: 0%", 
+                                      font=('Segoe UI', 12, 'bold'))
         self.lbl_pass_rate.grid(row=1, column=0, columnspan=3, sticky='w', pady=(5, 0))
         
         # (4행) 실패 항목 상세 테이블
-        failures_group = ttk.LabelFrame(main_layout, text="❌ 실패 항목 상세", padding=10)
+        failures_group = ttk.LabelFrame(main_layout, text="Failed Items Details", padding=10)
         failures_group.grid(row=3, column=0, sticky='nsew', pady=(0, 10))
         
         # 실패 항목 테이블 생성
@@ -679,12 +642,12 @@ class QCTabController(TabController):
         self.tbl_failures = ttk.Treeview(table_frame, columns=columns, show='headings', height=10)
         
         # 컬럼 헤더 설정
-        self.tbl_failures.heading("parameter", text="파라미터명")
+        self.tbl_failures.heading("parameter", text="Parameter Name")
         self.tbl_failures.heading("default_value", text="Default Value")
         self.tbl_failures.heading("file_value", text="File Value")
         self.tbl_failures.heading("pass_fail", text="Pass/Fail")
         self.tbl_failures.heading("issue_type", text="Issue Type")
-        self.tbl_failures.heading("description", text="설명")
+        self.tbl_failures.heading("description", text="Description")
         
         # 컬럼 너비 설정
         self.tbl_failures.column("parameter", width=150)
@@ -693,8 +656,6 @@ class QCTabController(TabController):
         self.tbl_failures.column("pass_fail", width=80)
         self.tbl_failures.column("issue_type", width=120)
         self.tbl_failures.column("description", width=200)
-        
-        # 편집 불가 설정 (이미 기본값)
         
         # 스크롤바 추가
         scrollbar_v = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.tbl_failures.yview)
@@ -714,10 +675,10 @@ class QCTabController(TabController):
         button_frame.grid(row=4, column=0, sticky='ew', pady=(10, 0))
         
         # 버튼 우측 정렬
-        ttk.Button(button_frame, text="🖨️ 인쇄", 
+        ttk.Button(button_frame, text="Print Report", 
                   command=self._on_print_report).pack(side=tk.RIGHT, padx=(5, 0))
         
-        ttk.Button(button_frame, text="📄 PDF 저장", 
+        ttk.Button(button_frame, text="Export Report", 
                   command=self._on_save_pdf).pack(side=tk.RIGHT, padx=(5, 0))
 
     def _update_final_report_tab(self, results: list):
@@ -740,57 +701,47 @@ class QCTabController(TabController):
         
         # 2. 최종 판정 설정
         overall_result = "PASS" if fail_count == 0 else "FAIL"
-        result_color = 'green' if overall_result == "PASS" else 'red'
-        result_bg = '#e8f5e8' if overall_result == "PASS" else '#ffe8e8'
+        result_color = "green" if overall_result == "PASS" else "red"
         
-        self.lbl_overall_result.config(
-            text=f"최종 판정: {overall_result}",
-            fg=result_color,
-            bg=result_bg
-        )
+        # 3. UI 업데이트
+        # 최종 판정 업데이트
+        self.lbl_overall_result.config(text=f"QC Inspection Result: {overall_result}", fg=result_color)
         
-        # 3. 검수 정보 업데이트
-        equipment_type = self.equipment_type_var.get() or "미선택"
+        # 검수 정보 업데이트 (영어로 변경)
+        equipment_type = self.equipment_type_var.get() or "Not Selected"
         check_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        include_all = "전체 포함" if getattr(self, 'chk_include_all_var', tk.BooleanVar()).get() else "일반"
         
-        self.lbl_equipment_type.config(text=f"장비 유형: {equipment_type}")
-        self.lbl_check_date.config(text=f"검수 일시: {check_date}")
-        self.lbl_total_items.config(text=f"총 항목 수: {total_items}개")
-        self.lbl_check_mode.config(text=f"검수 모드: {include_all}")
+        # 사용자 요청: 검수 모드를 체크박스 상태에 따라 동적으로 표시
+        include_all = self.chk_include_all_var.get()
+        check_mode = "All Items Included" if include_all else "Check List Only"
         
-        # 4. 핵심 요약 업데이트
-        self.lbl_pass_count.config(text=f"통과: {pass_count}개")
-        self.lbl_fail_count.config(text=f"실패: {fail_count}개")
-        self.lbl_critical_count.config(text=f"심각: {critical_count}개")
-        self.lbl_pass_rate.config(text=f"통과율: {pass_rate:.1f}%")
+        self.lbl_equipment_type.config(text=f"Equipment Type: {equipment_type}")
+        self.lbl_check_date.config(text=f"Inspection Date: {check_date}")
+        self.lbl_total_items.config(text=f"Total Items: {total_items}")
+        self.lbl_check_mode.config(text=f"Inspection Mode: {check_mode}")
         
-        # 5. 실패 항목 테이블 업데이트
-        # 기존 항목 삭제
+        # 핵심 요약 업데이트 (영어로 변경)
+        self.lbl_pass_count.config(text=f"Pass: {pass_count} items")
+        self.lbl_fail_count.config(text=f"Fail: {fail_count} items")
+        self.lbl_critical_count.config(text=f"Critical: {critical_count} items")
+        self.lbl_pass_rate.config(text=f"Pass Rate: {pass_rate:.1f}%")
+        
+        # 4. 실패 항목 테이블 업데이트
+        # 기존 데이터 클리어
         for item in self.tbl_failures.get_children():
             self.tbl_failures.delete(item)
-            
-        # 실패 항목만 추가
-        for result in fail_items:
-            values = (
-                result.get('parameter', ''),
-                result.get('default_value', ''),
-                result.get('file_value', ''),
-                result.get('pass_fail', ''),
-                result.get('issue_type', ''),
-                result.get('description', '')
-            )
-            
-            # 심각도에 따른 태그 설정
-            severity = result.get('severity', '낮음')
-            tag = f"severity_{severity}"
-            
-            self.tbl_failures.insert("", "end", values=values, tags=(tag,))
         
-        # 테이블 태그 색상 설정
-        self.tbl_failures.tag_configure("severity_높음", background="#ffebee", foreground="#c62828")
-        self.tbl_failures.tag_configure("severity_중간", background="#fff3e0", foreground="#ef6c00")
-        self.tbl_failures.tag_configure("severity_낮음", background="#f3e5f5", foreground="#7b1fa2")
+        # 실패 항목만 필터링하여 테이블에 추가
+        for item in fail_items:
+            values = (
+                item.get('parameter', ''),
+                item.get('default_value', 'N/A'),
+                item.get('file_value', 'N/A'),
+                item.get('pass_fail', ''),
+                item.get('issue_type', ''),
+                item.get('description', '')
+            )
+            self.tbl_failures.insert('', 'end', values=values)
 
     def _on_print_report(self):
         """보고서 인쇄"""
@@ -846,65 +797,61 @@ class QCTabController(TabController):
         """텍스트 형태 보고서 생성"""
         from datetime import datetime
         
-        # 보고서 헤더
+        # 보고서 헤더 (영어로 변경)
         report = []
         report.append("=" * 60)
-        report.append("QC 검수 최종 보고서")
+        report.append("QC INSPECTION FINAL REPORT")
         report.append("=" * 60)
         report.append("")
         
-        # 검수 정보
-        equipment_type = self.equipment_type_var.get() or "미선택"
+        # 검수 정보 (영어로 변경)
+        equipment_type = self.equipment_type_var.get() or "Not Selected"
         check_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        include_all = "전체 포함" if getattr(self, 'chk_include_all_var', tk.BooleanVar()).get() else "일반"
         
-        report.append("📋 검수 정보")
+        # 사용자 요청: 검수 모드를 체크박스 상태에 따라 동적으로 표시
+        include_all = self.chk_include_all_var.get()
+        check_mode = "All Items Included" if include_all else "Check List Only"
+        
+        report.append("INSPECTION INFORMATION")
         report.append("-" * 30)
-        report.append(f"장비 유형: {equipment_type}")
-        report.append(f"검수 일시: {check_date}")
-        report.append(f"총 항목 수: {len(self.qc_results)}개")
-        report.append(f"검수 모드: {include_all}")
+        report.append(f"Equipment Type: {equipment_type}")
+        report.append(f"Inspection Date: {check_date}")
+        report.append(f"Total Items: {len(self.qc_results) if hasattr(self, 'qc_results') else 0}")
+        report.append(f"Inspection Mode: {check_mode}")
         report.append("")
         
-        # 요약 통계
-        fail_items = [r for r in self.qc_results if r.get('pass_fail', '').upper() == 'FAIL']
-        pass_items = [r for r in self.qc_results if r.get('pass_fail', '').upper() == 'PASS']
-        critical_items = [r for r in self.qc_results if r.get('severity', '') == '높음']
-        
-        pass_count = len(pass_items)
-        fail_count = len(fail_items)
-        critical_count = len(critical_items)
-        pass_rate = (pass_count / len(self.qc_results) * 100) if self.qc_results else 0
-        overall_result = "PASS" if fail_count == 0 else "FAIL"
-        
-        report.append("📈 핵심 요약")
-        report.append("-" * 30)
-        report.append(f"최종 판정: {overall_result}")
-        report.append(f"통과: {pass_count}개")
-        report.append(f"실패: {fail_count}개")
-        report.append(f"심각: {critical_count}개")
-        report.append(f"통과율: {pass_rate:.1f}%")
-        report.append("")
-        
-        # 실패 항목 상세
-        if fail_items:
-            report.append("❌ 실패 항목 상세")
-            report.append("-" * 50)
-            for i, item in enumerate(fail_items, 1):
-                report.append(f"{i}. {item.get('parameter', 'N/A')}")
-                report.append(f"   Default Value: {item.get('default_value', 'N/A')}")
-                report.append(f"   File Value: {item.get('file_value', 'N/A')}")
-                report.append(f"   Pass/Fail: {item.get('pass_fail', 'N/A')}")
-                report.append(f"   Issue Type: {item.get('issue_type', 'N/A')}")
-                report.append(f"   설명: {item.get('description', 'N/A')}")
-                report.append("")
-        else:
-            report.append("✅ 모든 항목이 통과했습니다.")
+        # 핵심 요약 (영어로 변경)
+        if hasattr(self, 'qc_results') and self.qc_results:
+            fail_items = [r for r in self.qc_results if r.get('pass_fail', '').upper() == 'FAIL']
+            pass_items = [r for r in self.qc_results if r.get('pass_fail', '').upper() == 'PASS']
+            
+            pass_count = len(pass_items)
+            fail_count = len(fail_items)
+            total_count = len(self.qc_results)
+            pass_rate = (pass_count / total_count * 100) if total_count > 0 else 0
+            
+            report.append("SUMMARY STATISTICS")
+            report.append("-" * 30)
+            report.append(f"Pass: {pass_count} items")
+            report.append(f"Fail: {fail_count} items")
+            report.append(f"Pass Rate: {pass_rate:.1f}%")
             report.append("")
-        
-        report.append("=" * 60)
-        report.append("보고서 생성 완료")
-        report.append("=" * 60)
+            
+            # 최종 판정 (영어로 변경)
+            overall_result = "PASS" if fail_count == 0 else "FAIL"
+            report.append(f"FINAL RESULT: {overall_result}")
+            report.append("")
+            
+            # 실패 항목 상세 (영어로 변경)
+            if fail_items:
+                report.append("FAILED ITEMS DETAILS")
+                report.append("-" * 30)
+                for i, item in enumerate(fail_items, 1):
+                    report.append(f"{i}. Parameter: {item.get('parameter', '')}")
+                    report.append(f"   Issue Type: {item.get('issue_type', '')}")
+                    report.append(f"   Description: {item.get('description', '')}")
+                    report.append(f"   Severity: {item.get('severity', '')}")
+                    report.append("")
         
         return "\n".join(report)
 

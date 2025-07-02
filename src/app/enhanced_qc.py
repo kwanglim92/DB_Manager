@@ -468,7 +468,7 @@ def add_enhanced_qc_functions_to_class(cls):
         
         # QC 탭 프레임 생성
         qc_tab = ttk.Frame(self.main_notebook)
-        self.main_notebook.add(qc_tab, text="🔍 QC 검수 (리팩토링됨)")
+        self.main_notebook.add(qc_tab, text="🔍 QC 검수")
         
         # QCTabController 인스턴스 생성 및 초기화
         self.qc_tab_controller = QCTabController(qc_tab, self)
@@ -477,168 +477,15 @@ def add_enhanced_qc_functions_to_class(cls):
         self.qc_check_frame = qc_tab
         
         self.update_log("🎉 새로운 QC 탭 컨트롤러로 탭이 생성되었습니다!")
-        self.update_log("   - 검수 모드 라디오버튼 숨김 처리됨")
-        self.update_log("   - 전체 항목 포함 체크박스 추가됨")
-        self.update_log("   - 최종 보고서 탭 추가됨")
-    
-    def _create_legacy_qc_tab(self):
-        """기존 방식의 QC 탭 생성 (비활성화됨)"""
-        # 🚫 기존 방식은 완전히 비활성화됨
-        qc_tab = ttk.Frame(self.main_notebook)
-        self.main_notebook.add(qc_tab, text="❌ QC 검수 (기존-비활성화)")
+        self.update_log("   ✅ 올바른 검수 옵션 텍스트 적용됨")
+        self.update_log("   ✅ 잘못된 텍스트(증점, 음압, 구치, 네이처) 완전 차단됨")
+        self.update_log("   ✅ 검수 모드 라디오버튼 숨김 처리됨")
+        self.update_log("   ✅ 전체 항목 포함 체크박스 추가됨")
+        self.update_log("   ✅ 최종 보고서 탭 추가됨")
         
-        # 간단한 메시지만 표시
-        message_label = ttk.Label(qc_tab, 
-                                 text="🚫 기존 QC 방식이 비활성화되었습니다.\n\n"
-                                      "새로운 QCTabController를 사용해주세요.",
-                                 font=('Arial', 12),
-                                 justify='center')
-        message_label.pack(expand=True)
-        
-        self.update_log("⚠️ 기존 QC 탭 방식이 비활성화되었습니다.")
-        return  # 여기서 메서드 종료
+        # 기존 코드는 완전히 실행하지 않음
+        return
 
-        # 🎨 상단 컨트롤 패널 - 향상된 디자인
-        control_panel = ttk.Frame(qc_tab)
-        control_panel.pack(fill=tk.X, padx=10, pady=10)
-
-        # 장비 유형 선택 프레임
-        type_frame = ttk.LabelFrame(control_panel, text="🔧 장비 유형 설정", padding=10)
-        type_frame.pack(fill=tk.X, pady=(0, 5))
-
-        # 장비 유형 선택 라인
-        equipment_line = ttk.Frame(type_frame)
-        equipment_line.pack(fill=tk.X)
-
-        # 장비 유형 콤보박스
-        ttk.Label(equipment_line, text="장비 유형:").pack(side=tk.LEFT, padx=(0, 5))
-        self.qc_type_var = tk.StringVar()
-        self.qc_type_combobox = ttk.Combobox(equipment_line, textvariable=self.qc_type_var, state="readonly", width=25)
-        self.qc_type_combobox.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # 새로고침 버튼
-        refresh_btn = ttk.Button(equipment_line, text="🔄 새로고침", command=self.refresh_qc_equipment_types)
-        refresh_btn.pack(side=tk.LEFT, padx=(0, 10))
-
-        # 검수 모드 선택 프레임
-        mode_frame = ttk.LabelFrame(control_panel, text="📋 검수 모드", padding=10)
-        mode_frame.pack(fill=tk.X, pady=(0, 5))
-
-        # 검수 모드 선택
-        mode_line = ttk.Frame(mode_frame)
-        mode_line.pack(fill=tk.X)
-
-        ttk.Label(mode_line, text="검수 모드:").pack(side=tk.LEFT, padx=(0, 5))
-        self.qc_mode_var = tk.StringVar(value="checklist")
-        
-        def on_mode_change(*args):
-            """검수 모드 변경 시 상태 메시지 업데이트"""
-            mode = self.qc_mode_var.get()
-            if mode == "checklist":
-                self.qc_status_label.config(
-                    text="📋 Check list 모드 - 파일 선택 후 검수 가능", 
-                    foreground='blue'
-                )
-            else:
-                self.qc_status_label.config(
-                    text="📋 전체 검수 모드 - 파일 없이도 검수 가능", 
-                    foreground='blue'
-                )
-        
-        checklist_radio = ttk.Radiobutton(mode_line, text="⭐ Check list 중점", 
-                                          variable=self.qc_mode_var, value="checklist",
-                                          command=on_mode_change)
-        checklist_radio.pack(side=tk.LEFT, padx=(0, 15))
-        
-        full_radio = ttk.Radiobutton(mode_line, text="📋 전체 검수", 
-                                   variable=self.qc_mode_var, value="full",
-                                   command=on_mode_change)
-        full_radio.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # 실행 버튼 프레임 - 행으로 나열
-        action_frame = ttk.LabelFrame(control_panel, text="🚀 검수 실행", padding=10)
-        action_frame.pack(fill=tk.X, pady=(0, 5))
-
-        # 버튼들을 행으로 나열
-        button_line = ttk.Frame(action_frame)
-        button_line.pack(fill=tk.X)
-
-        # 검수 파일 선택 버튼
-        file_select_btn = ttk.Button(button_line, text="📁 검수 파일 선택", command=self.select_qc_files)
-        file_select_btn.pack(side=tk.LEFT, padx=(0, 10))
-
-        # QC 실행 버튼
-        self.qc_btn = ttk.Button(button_line, text="🔍 QC 검수 실행", command=self.perform_enhanced_qc_check)
-        self.qc_btn.pack(side=tk.LEFT, padx=(0, 10))
-
-        # Excel 내보내기 버튼
-        export_btn = ttk.Button(button_line, text="📤 Excel 내보내기", command=self.export_qc_results_simple)
-        export_btn.pack(side=tk.LEFT, padx=(0, 10))
-
-        # 🎨 메인 결과 영역 - 탭 구조로 개선
-        main_frame = ttk.Frame(qc_tab)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
-
-        # 결과 탭 노트북
-        self.qc_results_notebook = ttk.Notebook(main_frame)
-        self.qc_results_notebook.pack(fill=tk.BOTH, expand=True)
-
-        # Tab 1: QC Results List
-        results_tab = ttk.Frame(self.qc_results_notebook)
-        self.qc_results_notebook.add(results_tab, text="QC Results")
-
-        # Professional QC Results TreeView - 개선된 컬럼 구조
-        columns = ("itemname", "default_value", "file_value", "pass_fail", "issue_type", "description")
-        headings = {
-            "itemname": "ItemName", 
-            "default_value": "Default Value",
-            "file_value": "File Value",
-            "pass_fail": "Pass/Fail",
-            "issue_type": "Issue Type", 
-            "description": "Description"
-        }
-        column_widths = {
-            "itemname": 200, 
-            "default_value": 120,
-            "file_value": 120,
-            "pass_fail": 80,
-            "issue_type": 150, 
-            "description": 300
-        }
-
-        results_frame, self.qc_result_tree = create_treeview_with_scrollbar(
-            results_tab, columns, headings, column_widths, height=12)
-        results_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        # 탭 2: 통계 및 요약
-        stats_tab = ttk.Frame(self.qc_results_notebook)
-        self.qc_results_notebook.add(stats_tab, text="📊 통계 요약")
-
-        # 통계 요약 영역
-        self.stats_summary_frame = ttk.Frame(stats_tab)
-        self.stats_summary_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        # 탭 3: 시각화
-        chart_tab = ttk.Frame(self.qc_results_notebook)
-        self.qc_results_notebook.add(chart_tab, text="📈 시각화")
-
-        self.chart_container = ttk.Frame(chart_tab)
-        self.chart_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        # 🎨 하단 상태 표시줄
-        status_frame = ttk.Frame(qc_tab)
-        status_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-
-        self.qc_status_label = ttk.Label(status_frame, text="📋 Check list 모드 - 파일 선택 후 검수 가능", 
-                                        font=('Arial', 9), foreground='blue')
-        self.qc_status_label.pack(side=tk.LEFT)
-
-        self.qc_progress = ttk.Progressbar(status_frame, mode='determinate', length=200)
-        self.qc_progress.pack(side=tk.RIGHT, padx=(10, 0))
-        
-        # 초기 데이터 로드
-        self.load_equipment_types_for_qc()
-    
     def select_qc_files(self):
         """QC 검수를 위한 파일 선택 (업로드된 파일 중에서 선택)"""
         try:
