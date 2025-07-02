@@ -157,12 +157,31 @@ class DBSchema:
             return False
 
     def delete_equipment_type(self, type_id, conn_override=None):
-        """장비 유형 삭제"""
+        """장비 유형 삭제 (관련 Default DB 값들도 함께 삭제)"""
         with self.get_connection(conn_override) as conn:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM Equipment_Types WHERE id = ?', (type_id,))
-            conn.commit()
-            return cursor.rowcount > 0
+            try:
+                # 트랜잭션 시작
+                cursor.execute('BEGIN TRANSACTION')
+                
+                # 먼저 관련된 Default DB 값들 삭제
+                cursor.execute('DELETE FROM Default_DB_Values WHERE equipment_type_id = ?', (type_id,))
+                deleted_params = cursor.rowcount
+                
+                # 장비 유형 삭제
+                cursor.execute('DELETE FROM Equipment_Types WHERE id = ?', (type_id,))
+                deleted_types = cursor.rowcount
+                
+                # 트랜잭션 커밋
+                conn.commit()
+                
+                # 삭제된 항목이 있으면 성공
+                return deleted_types > 0
+                
+            except Exception as e:
+                # 오류 발생 시 롤백
+                conn.rollback()
+                raise e
 
     # ==================== Default DB 값 관리 ====================
     

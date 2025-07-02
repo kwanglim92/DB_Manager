@@ -603,9 +603,9 @@ class DBManager:
             self.maint_mode = True
             self.update_log("🚀 유지보수 모드 활성화 시작...")
             
-            # QC 검수 탭 생성
-            self.update_log("📋 QC 검수 탭 생성 중...")
-            self.create_qc_check_tab()
+            # QC 검수 탭 생성 (Enhanced QC 사용)
+            self.update_log("📋 Enhanced QC 검수 탭 생성 중...")
+            self.create_qc_tabs_with_advanced_features()
             
             # Default DB 관리 탭 생성 (동기적 실행)
             self.update_log("🔧 Default DB 관리 탭 생성 중...")

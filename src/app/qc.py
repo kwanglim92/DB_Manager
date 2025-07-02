@@ -60,27 +60,43 @@ class QCValidator:
         
         # 신뢰도가 낮은 파라미터 확인
         if 'confidence_score' in df.columns:
-            low_confidence = df[df['confidence_score'] < 0.5]
-            if len(low_confidence) > 0:
-                for _, row in low_confidence.iterrows():
-                    results.append({
-                        "parameter": row['parameter_name'],
-                        "issue_type": "낮은 신뢰도",
-                        "description": f"신뢰도가 {row['confidence_score']*100:.1f}%로 낮습니다 (발생횟수: {row.get('occurrence_count', 'N/A')}/{row.get('total_files', 'N/A')})",
-                        "severity": "중간" if row['confidence_score'] < 0.3 else "낮음"
-                    })
+            try:
+                # confidence_score를 안전하게 숫자로 변환
+                df_copy = df.copy()
+                df_copy['confidence_score_numeric'] = pd.to_numeric(df_copy['confidence_score'], errors='coerce')
+                low_confidence = df_copy[df_copy['confidence_score_numeric'] < 0.5]
+                
+                if len(low_confidence) > 0:
+                    for _, row in low_confidence.iterrows():
+                        confidence_val = row.get('confidence_score_numeric', 0)
+                        if pd.notna(confidence_val):
+                            results.append({
+                                "parameter": row['parameter_name'],
+                                "issue_type": "낮은 신뢰도",
+                                "description": f"신뢰도가 {confidence_val*100:.1f}%로 낮습니다 (발생횟수: {row.get('occurrence_count', 'N/A')}/{row.get('total_files', 'N/A')})",
+                                "severity": "중간" if confidence_val < 0.3 else "낮음"
+                            })
+            except Exception as e:
+                print(f"신뢰도 검사 중 오류: {e}")
         
         # 발생횟수가 1인 파라미터 (단일 소스)
         if 'occurrence_count' in df.columns and 'total_files' in df.columns:
-            single_source = df[df['occurrence_count'] == 1]
-            if len(single_source) > 0:
-                for _, row in single_source.iterrows():
-                    results.append({
-                        "parameter": row['parameter_name'],
-                        "issue_type": "단일 소스",
-                        "description": f"단일 파일에서만 발견된 파라미터입니다 (1/{row.get('total_files', 'N/A')} 파일)",
-                        "severity": "낮음"
-                    })
+            try:
+                # occurrence_count를 안전하게 숫자로 변환
+                df_copy = df.copy()
+                df_copy['occurrence_count_numeric'] = pd.to_numeric(df_copy['occurrence_count'], errors='coerce')
+                single_source = df_copy[df_copy['occurrence_count_numeric'] == 1]
+                
+                if len(single_source) > 0:
+                    for _, row in single_source.iterrows():
+                        results.append({
+                            "parameter": row['parameter_name'],
+                            "issue_type": "단일 소스",
+                            "description": f"단일 파일에서만 발견된 파라미터입니다 (1/{row.get('total_files', 'N/A')} 파일)",
+                            "severity": "낮음"
+                        })
+            except Exception as e:
+                print(f"발생횟수 검사 중 오류: {e}")
         
         return results
 

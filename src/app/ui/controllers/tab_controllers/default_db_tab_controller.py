@@ -659,8 +659,63 @@ class DefaultDBTabController(TabController):
         messagebox.showinfo("구현 예정", "이 기능은 향후 구현될 예정입니다.")
     
     def _delete_equipment_type(self):
-        """장비 유형 삭제 (향후 구현)"""
-        messagebox.showinfo("구현 예정", "이 기능은 향후 구현될 예정입니다.")
+        """장비 유형 삭제"""
+        if not self._check_maintenance_mode():
+            return
+            
+        selected = self.equipment_type_var.get()
+        if not selected:
+            messagebox.showwarning("선택 필요", "삭제할 장비 유형을 선택해주세요.")
+            return
+        
+        try:
+            # 선택된 장비 유형의 ID 추출
+            equipment_type_id = None
+            for type_id, type_name in self.equipment_types.items():
+                if f"{type_name} (ID: {type_id})" == selected:
+                    equipment_type_id = type_id
+                    break
+            
+            if not equipment_type_id:
+                messagebox.showerror("오류", "장비 유형 ID를 찾을 수 없습니다.")
+                return
+            
+            # 관련 파라미터 개수 확인
+            param_count = self.db_schema.get_total_parameter_count(equipment_type_id)
+            
+            # 삭제 확인
+            if param_count > 0:
+                confirm_msg = (
+                    f"장비 유형 '{selected.split(' (ID:')[0]}'을(를) 삭제하시겠습니까?\n\n"
+                    f"⚠️  이 장비 유형에는 {param_count}개의 파라미터가 있습니다.\n"
+                    f"장비 유형을 삭제하면 관련된 모든 파라미터도 함께 삭제됩니다.\n\n"
+                    f"이 작업은 되돌릴 수 없습니다."
+                )
+            else:
+                confirm_msg = (
+                    f"장비 유형 '{selected.split(' (ID:')[0]}'을(를) 삭제하시겠습니까?\n\n"
+                    f"이 작업은 되돌릴 수 없습니다."
+                )
+            
+            if not messagebox.askyesno("삭제 확인", confirm_msg):
+                return
+            
+            # 삭제 실행
+            if self.db_schema.delete_equipment_type(equipment_type_id):
+                messagebox.showinfo("완료", f"장비 유형이 삭제되었습니다.\n관련 파라미터 {param_count}개도 함께 삭제되었습니다.")
+                self.viewmodel.add_log_message(f"[Default DB] 장비 유형 '{selected.split(' (ID:')[0]}' 및 관련 파라미터 {param_count}개 삭제 완료")
+                
+                # UI 새로고침
+                self._refresh_equipment_types()
+                self._clear_parameter_tree()
+                
+            else:
+                messagebox.showerror("오류", "장비 유형 삭제에 실패했습니다.")
+                
+        except Exception as e:
+            error_msg = f"장비 유형 삭제 중 오류 발생: {str(e)}"
+            messagebox.showerror("오류", error_msg)
+            self.viewmodel.add_log_message(f"❌ {error_msg}")
     
     def _add_parameter_dialog(self):
         """파라미터 추가 다이얼로그 (향후 구현)"""

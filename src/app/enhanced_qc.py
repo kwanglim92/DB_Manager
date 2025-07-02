@@ -35,41 +35,61 @@ class EnhancedQCValidator:
         results = []
         
         if 'is_checklist' in df.columns:
-            checklist_params = df[df['is_checklist'] == 1]
-            
-            # Check list 파라미터의 신뢰도 검사 (더 엄격한 기준)
-            if 'confidence_score' in df.columns:
-                low_checklist_confidence = checklist_params[checklist_params['confidence_score'] < 0.8]
-                for _, row in low_checklist_confidence.iterrows():
+            try:
+                # is_checklist를 안전하게 숫자로 변환
+                df_copy = df.copy()
+                df_copy['is_checklist_numeric'] = pd.to_numeric(df_copy['is_checklist'], errors='coerce')
+                checklist_params = df_copy[df_copy['is_checklist_numeric'] == 1]
+                
+                # Check list 파라미터의 신뢰도 검사 (더 엄격한 기준)
+                if 'confidence_score' in df.columns and len(checklist_params) > 0:
+                    try:
+                        # confidence_score를 안전하게 숫자로 변환
+                        checklist_params['confidence_score_numeric'] = pd.to_numeric(checklist_params['confidence_score'], errors='coerce')
+                        low_checklist_confidence = checklist_params[checklist_params['confidence_score_numeric'] < 0.8]
+                        
+                        for _, row in low_checklist_confidence.iterrows():
+                            confidence_val = row.get('confidence_score_numeric', 0)
+                            if pd.notna(confidence_val):
+                                results.append({
+                                    "parameter": row['parameter_name'],
+                                    "issue_type": "Check list 신뢰도 부족",
+                                    "description": f"Check list 중요 파라미터의 신뢰도가 {confidence_val*100:.1f}%로 낮습니다 (권장: 80% 이상)",
+                                    "severity": "높음",
+                                    "category": "checklist",
+                                    "recommendation": "더 많은 소스 파일에서 확인하거나 수동 검증이 필요합니다.",
+                                    "default_value": row.get('default_value', 'N/A'),
+                                    "file_value": "N/A",
+                                    "pass_fail": "FAIL"
+                                })
+                    except Exception as confidence_error:
+                        print(f"신뢰도 검사 중 오류: {confidence_error}")
+                
+                # Check list 파라미터의 사양 범위 누락 검사
+                missing_specs = checklist_params[
+                    (checklist_params['min_spec'].isna() | (checklist_params['min_spec'] == '')) |
+                    (checklist_params['max_spec'].isna() | (checklist_params['max_spec'] == ''))
+                ]
+                for _, row in missing_specs.iterrows():
                     results.append({
                         "parameter": row['parameter_name'],
-                        "issue_type": "Check list 신뢰도 부족",
-                        "description": f"Check list 중요 파라미터의 신뢰도가 {row['confidence_score']*100:.1f}%로 낮습니다 (권장: 80% 이상)",
+                        "issue_type": "Check list 사양 누락",
+                        "description": f"Check list 중요 파라미터에 사양 범위(min/max)가 누락되었습니다",
                         "severity": "높음",
-                        "category": "checklist",
-                        "recommendation": "더 많은 소스 파일에서 확인하거나 수동 검증이 필요합니다."
+                        "category": "completeness",
+                        "recommendation": "장비 매뉴얼을 참조하여 사양 범위를 추가하세요.",
+                        "default_value": row.get('default_value', 'N/A'),
+                        "file_value": "N/A",
+                        "pass_fail": "FAIL"
                     })
-            
-            # Check list 파라미터의 사양 범위 누락 검사
-            missing_specs = checklist_params[
-                (checklist_params['min_spec'].isna() | (checklist_params['min_spec'] == '')) |
-                (checklist_params['max_spec'].isna() | (checklist_params['max_spec'] == ''))
-            ]
-            for _, row in missing_specs.iterrows():
-                results.append({
-                    "parameter": row['parameter_name'],
-                    "issue_type": "Check list 사양 누락",
-                    "description": f"Check list 중요 파라미터에 사양 범위(min/max)가 누락되었습니다",
-                    "severity": "높음",
-                    "category": "completeness",
-                    "recommendation": "장비 매뉴얼을 참조하여 사양 범위를 추가하세요."
-                })
+            except Exception as e:
+                print(f"Check list 파라미터 검사 중 오류: {e}")
         
         return results
 
     @staticmethod
     def check_checklist_with_file_comparison(checklist_df, file_df, equipment_type):
-        """Check list 파라미터와 파일 데이터 비교 검사 - 새로운 기능"""
+        """Check list 파라미터와 파일 데이터 비교 검사 - 단순화된 버전"""
         results = []
         
         if checklist_df.empty or file_df.empty:
@@ -77,118 +97,167 @@ class EnhancedQCValidator:
         
         # Check list 파라미터만 필터링
         if 'is_checklist' in checklist_df.columns:
-            checklist_params = checklist_df[checklist_df['is_checklist'] == 1]
+            try:
+                checklist_df_copy = checklist_df.copy()
+                checklist_df_copy['is_checklist_numeric'] = pd.to_numeric(checklist_df_copy['is_checklist'], errors='coerce')
+                checklist_params = checklist_df_copy[checklist_df_copy['is_checklist_numeric'] == 1]
+            except:
+                checklist_params = checklist_df
         else:
             checklist_params = checklist_df
         
         for _, checklist_row in checklist_params.iterrows():
             param_name = checklist_row['parameter_name']
-            default_value = checklist_row['default_value']
+            default_value = str(checklist_row['default_value']).strip()
             min_spec = checklist_row.get('min_spec', '')
             max_spec = checklist_row.get('max_spec', '')
             
             # 파일에서 동일한 파라미터 찾기
-            matching_params = file_df[file_df['Parameter'].str.contains(param_name, case=False, na=False)]
+            matching_params = pd.DataFrame()
+            param_columns = ['Parameter', 'parameter', 'Item', 'item', 'Name', 'name', 'ItemName', 'Item Name']
+            param_column = None
             
-            if matching_params.empty:
-                # 파라미터가 파일에 없음
+            for col in param_columns:
+                if col in file_df.columns:
+                    param_column = col
+                    break
+            
+            if not param_column:
+                # 파라미터 컬럼을 찾을 수 없음 - 누락
                 results.append({
                     "parameter": param_name,
-                    "issue_type": "Missing Parameter",
-                    "description": f"Check list 파라미터 '{param_name}'이 선택된 파일에서 발견되지 않았습니다",
+                    "issue_type": "누락",
+                    "description": f"파일에서 파라미터 컬럼을 찾을 수 없습니다",
                     "severity": "높음",
                     "category": "completeness",
-                    "recommendation": "파라미터명을 확인하거나 파일 내용을 검토하세요.",
+                    "recommendation": "파일 형식을 확인하세요",
                     "default_value": default_value,
                     "file_value": "N/A",
                     "pass_fail": "FAIL"
                 })
-            else:
-                # 파라미터 값 비교
-                for _, file_row in matching_params.iterrows():
-                    file_value = str(file_row.get('Value', ''))
-                    
-                    # Default Value와 File Value 비교
-                    if str(default_value) != file_value:
-                        results.append({
-                            "parameter": param_name,
-                            "issue_type": "Value Mismatch",
-                            "description": f"Default Value와 File Value가 다릅니다: Default='{default_value}', File='{file_value}'",
-                            "severity": "중간",
-                            "category": "consistency",
-                            "recommendation": "값의 차이 원인을 확인하고 필요시 Default Value를 업데이트하세요.",
-                            "default_value": default_value,
-                            "file_value": file_value,
-                            "pass_fail": "FAIL"
-                        })
-                    
-                    # Min/Max Spec 범위 검사
-                    if min_spec and max_spec:
-                        try:
-                            # 숫자 값으로 변환 시도
-                            default_num = float(str(default_value).replace(',', ''))
-                            file_num = float(str(file_value).replace(',', ''))
-                            min_num = float(str(min_spec).replace(',', ''))
-                            max_num = float(str(max_spec).replace(',', ''))
-                            
-                            # Default Value 범위 검사
-                            default_in_range = min_num <= default_num <= max_num
-                            file_in_range = min_num <= file_num <= max_num
-                            
-                            if not default_in_range:
-                                results.append({
-                                    "parameter": param_name,
-                                    "issue_type": "Default Out of Range",
-                                    "description": f"Default Value {default_value}가 허용 범위 [{min_spec} ~ {max_spec}]를 벗어났습니다",
-                                    "severity": "높음",
-                                    "category": "accuracy",
-                                    "recommendation": "Default Value를 허용 범위 내로 수정하세요.",
-                                    "default_value": default_value,
-                                    "file_value": file_value,
-                                    "pass_fail": "FAIL"
-                                })
-                            
-                            if not file_in_range:
-                                results.append({
-                                    "parameter": param_name,
-                                    "issue_type": "File Value Out of Range",
-                                    "description": f"File Value {file_value}가 허용 범위 [{min_spec} ~ {max_spec}]를 벗어났습니다",
-                                    "severity": "높음",
-                                    "category": "accuracy",
-                                    "recommendation": "파일의 파라미터 값을 확인하고 수정하세요.",
-                                    "default_value": default_value,
-                                    "file_value": file_value,
-                                    "pass_fail": "FAIL"
-                                })
-                            
-                            # 둘 다 범위 내에 있으면 PASS
-                            if default_in_range and file_in_range and str(default_value) == file_value:
-                                results.append({
-                                    "parameter": param_name,
-                                    "issue_type": "Pass",
-                                    "description": f"✅ 모든 검사 통과: Default=File={file_value}, 범위 내 [{min_spec} ~ {max_spec}]",
-                                    "severity": "낮음",
-                                    "category": "accuracy",
-                                    "recommendation": "검사 완료 - 문제없음",
-                                    "default_value": default_value,
-                                    "file_value": file_value,
-                                    "pass_fail": "PASS"
-                                })
-                                
-                        except (ValueError, TypeError):
-                            # 숫자 변환 실패 시 문자열로 비교
-                            if str(default_value) == str(file_value):
-                                results.append({
-                                    "parameter": param_name,
-                                    "issue_type": "Pass",
-                                    "description": f"✅ 값 일치: Default=File='{file_value}' (문자열 비교)",
-                                    "severity": "낮음",
-                                    "category": "consistency",
-                                    "recommendation": "검사 완료 - 문제없음",
-                                    "default_value": default_value,
-                                    "file_value": file_value,
-                                    "pass_fail": "PASS"
-                                })
+                continue
+            
+            # 파라미터명으로 매칭 시도
+            try:
+                matching_params = file_df[file_df[param_column].str.contains(param_name, case=False, na=False)]
+            except:
+                matching_params = file_df[file_df[param_column] == param_name]
+            
+            if matching_params.empty:
+                # 파라미터가 파일에 없음 - 누락
+                results.append({
+                    "parameter": param_name,
+                    "issue_type": "누락",
+                    "description": f"파일에서 '{param_name}' 파라미터를 찾을 수 없습니다",
+                    "severity": "높음",
+                    "category": "completeness",
+                    "recommendation": "파라미터가 파일에 포함되어 있는지 확인하세요",
+                    "default_value": default_value,
+                    "file_value": "N/A",
+                    "pass_fail": "FAIL"
+                })
+                continue
+            
+            # 파라미터가 발견된 경우 값 비교
+            for _, file_row in matching_params.iterrows():
+                # 파일 값 추출
+                value_columns = ['Value', 'value', 'Data', 'data', 'Setting', 'setting', 'Val', 'ItemValue']
+                file_value = 'N/A'
+                
+                for val_col in value_columns:
+                    if val_col in file_row.index and pd.notna(file_row[val_col]):
+                        file_value = str(file_row[val_col]).strip()
+                        break
+                
+                if file_value == 'N/A':
+                    # 값을 찾을 수 없음 - 누락
+                    results.append({
+                        "parameter": param_name,
+                        "issue_type": "누락",
+                        "description": f"파라미터는 있지만 값이 없습니다",
+                        "severity": "높음",
+                        "category": "completeness",
+                        "recommendation": "파라미터 값을 확인하세요",
+                        "default_value": default_value,
+                        "file_value": "N/A",
+                        "pass_fail": "FAIL"
+                    })
+                    continue
+                
+                # 값 비교 및 Pass/Fail 판정
+                issue_type = ""
+                pass_fail = "PASS"
+                description = ""
+                severity = "낮음"
+                
+                # 1. Min/Max 범위 검사 (있는 경우)
+                has_spec_range = (min_spec and str(min_spec).strip() and min_spec != 'N/A' and 
+                                max_spec and str(max_spec).strip() and max_spec != 'N/A')
+                
+                if has_spec_range:
+                    try:
+                        file_num = float(str(file_value).replace(',', ''))
+                        min_num = float(str(min_spec).replace(',', ''))
+                        max_num = float(str(max_spec).replace(',', ''))
+                        
+                        if not (min_num <= file_num <= max_num):
+                            # 범위를 벗어남 - Spec Out
+                            issue_type = "Spec Out"
+                            pass_fail = "FAIL"
+                            description = f"파일 값이 허용 범위를 벗어났습니다 (허용: {min_spec}~{max_spec})"
+                            severity = "높음"
+                        else:
+                            # 범위 내에 있음 - Default Value와 비교
+                            if default_value == file_value:
+                                # 완전히 일치 - PASS
+                                issue_type = ""
+                                pass_fail = "PASS"
+                                description = f"✅ 기준값과 일치하며 범위 내에 있습니다"
+                                severity = "낮음"
+                            else:
+                                # 범위 내이지만 기준값과 다름 - 기준값 Out
+                                issue_type = "기준값 Out"
+                                pass_fail = "FAIL"
+                                description = f"범위 내이지만 기준값과 다릅니다"
+                                severity = "중간"
+                        
+                    except (ValueError, TypeError):
+                        # 숫자 변환 실패 - 문자열로 비교
+                        if default_value == file_value:
+                            issue_type = ""
+                            pass_fail = "PASS"
+                            description = f"✅ 기준값과 일치합니다"
+                            severity = "낮음"
+                        else:
+                            issue_type = "기준값 Out"
+                            pass_fail = "FAIL"
+                            description = f"기준값과 다릅니다"
+                            severity = "중간"
+                else:
+                    # Min/Max 범위가 없는 경우 - Default Value와만 비교
+                    if default_value == file_value:
+                        issue_type = ""
+                        pass_fail = "PASS"
+                        description = f"✅ 기준값과 일치합니다"
+                        severity = "낮음"
+                    else:
+                        issue_type = "기준값 Out"
+                        pass_fail = "FAIL"
+                        description = f"기준값과 다릅니다"
+                        severity = "중간"
+                
+                # 결과 추가
+                results.append({
+                    "parameter": param_name,
+                    "issue_type": issue_type,
+                    "description": description,
+                    "severity": severity,
+                    "category": "consistency" if issue_type == "기준값 Out" else "accuracy" if issue_type == "Spec Out" else "pass",
+                    "recommendation": "수정이 필요합니다" if pass_fail == "FAIL" else "문제없음",
+                    "default_value": default_value,
+                    "file_value": file_value,
+                    "pass_fail": pass_fail
+                })
         
         return results
 
@@ -210,7 +279,10 @@ class EnhancedQCValidator:
                     "description": f"'{module}' 모듈에 파라미터가 {count}개만 있습니다 (권장: 3개 이상)",
                     "severity": "낮음",
                     "category": "completeness",
-                    "recommendation": "해당 모듈의 추가 파라미터를 확인하세요."
+                    "recommendation": "해당 모듈의 추가 파라미터를 확인하세요.",
+                    "default_value": "N/A",
+                    "file_value": "N/A",
+                    "pass_fail": "CHECK"
                 })
         
         # 파트별 분석
@@ -226,7 +298,10 @@ class EnhancedQCValidator:
                     "description": f"'{part}' 파트에 파라미터가 {count}개로 많습니다 (검토 권장: 20개 초과)",
                     "severity": "낮음",
                     "category": "consistency",
-                    "recommendation": "중복되거나 불필요한 파라미터가 있는지 검토하세요."
+                    "recommendation": "중복되거나 불필요한 파라미터가 있는지 검토하세요.",
+                    "default_value": "N/A",
+                    "file_value": "N/A",
+                    "pass_fail": "CHECK"
                 })
         
         return results
@@ -282,13 +357,28 @@ class EnhancedQCValidator:
         
         enhanced_results = []
         
-        if is_checklist_mode and file_df is not None:
+        # Check list 모드에서는 파일이 반드시 필요
+        if is_checklist_mode:
+            if file_df is None:
+                # Check list 모드에서 파일이 없으면 오류 결과 반환
+                return [{
+                    "parameter": "파일 비교 오류",
+                    "default_value": "N/A",
+                    "file_value": "파일 없음",
+                    "pass_fail": "FAIL",
+                    "issue_type": "파일 누락",
+                    "description": "Check list 검수 모드에서는 비교할 파일이 필요합니다.",
+                    "severity": "높음",
+                    "category": "system_error",
+                    "recommendation": "📁 파일 선택 버튼을 사용하여 검수할 파일을 선택해주세요."
+                }]
+            
             # Check list 모드: 파일과 Default DB 비교 검사
             enhanced_results.extend(
                 EnhancedQCValidator.check_checklist_with_file_comparison(df, file_df, equipment_type)
             )
         else:
-            # 기본 검사 실행 (기존 방식)
+            # 전체 검수 모드: 기본 검사 실행 (파일 없이도 가능)
             all_results = QCValidator.run_all_checks(df, equipment_type)
             
             # 기존 결과에 category와 recommendation 추가
@@ -307,13 +397,9 @@ class EnhancedQCValidator:
             
             enhanced_results.extend(all_results)
             
-            if is_checklist_mode:
-                # Check list 모드: Check list 파라미터 특별 검사만 수행
-                enhanced_results.extend(EnhancedQCValidator.check_checklist_parameters(df, equipment_type))
-            else:
-                # 전체 검수 모드: 모든 향상된 검사 수행
-                enhanced_results.extend(EnhancedQCValidator.check_checklist_parameters(df, equipment_type))
-                enhanced_results.extend(EnhancedQCValidator.check_data_trends(df, equipment_type))
+            # 전체 검수 모드: 모든 향상된 검사 수행
+            enhanced_results.extend(EnhancedQCValidator.check_checklist_parameters(df, equipment_type))
+            enhanced_results.extend(EnhancedQCValidator.check_data_trends(df, equipment_type))
 
         # 심각도 순으로 정렬
         enhanced_results.sort(key=lambda x: EnhancedQCValidator.SEVERITY_LEVELS.get(x["severity"], 0), reverse=True)
@@ -413,12 +499,28 @@ def add_enhanced_qc_functions_to_class(cls):
         ttk.Label(mode_line, text="검수 모드:").pack(side=tk.LEFT, padx=(0, 5))
         self.qc_mode_var = tk.StringVar(value="checklist")
         
+        def on_mode_change(*args):
+            """검수 모드 변경 시 상태 메시지 업데이트"""
+            mode = self.qc_mode_var.get()
+            if mode == "checklist":
+                self.qc_status_label.config(
+                    text="📋 Check list 모드 - 파일 선택 후 검수 가능", 
+                    foreground='blue'
+                )
+            else:
+                self.qc_status_label.config(
+                    text="📋 전체 검수 모드 - 파일 없이도 검수 가능", 
+                    foreground='blue'
+                )
+        
         checklist_radio = ttk.Radiobutton(mode_line, text="⭐ Check list 중점", 
-                                          variable=self.qc_mode_var, value="checklist")
+                                          variable=self.qc_mode_var, value="checklist",
+                                          command=on_mode_change)
         checklist_radio.pack(side=tk.LEFT, padx=(0, 15))
         
         full_radio = ttk.Radiobutton(mode_line, text="📋 전체 검수", 
-                                   variable=self.qc_mode_var, value="full")
+                                   variable=self.qc_mode_var, value="full",
+                                   command=on_mode_change)
         full_radio.pack(side=tk.LEFT, padx=(0, 10))
         
         # 실행 버튼 프레임 - 행으로 나열
@@ -495,7 +597,7 @@ def add_enhanced_qc_functions_to_class(cls):
         status_frame = ttk.Frame(qc_tab)
         status_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
 
-        self.qc_status_label = ttk.Label(status_frame, text="📋 QC 검수 대기 중...", 
+        self.qc_status_label = ttk.Label(status_frame, text="📋 Check list 모드 - 파일 선택 후 검수 가능", 
                                         font=('Arial', 9), foreground='blue')
         self.qc_status_label.pack(side=tk.LEFT)
 
@@ -508,213 +610,26 @@ def add_enhanced_qc_functions_to_class(cls):
     def select_qc_files(self):
         """QC 검수를 위한 파일 선택 (업로드된 파일 중에서 선택)"""
         try:
+            from .qc_utils import QCFileSelector
+            
             # 업로드된 파일 목록 확인
-            if not hasattr(self, 'uploaded_files') or not self.uploaded_files:
-                messagebox.showinfo(
-                    "파일 선택 안내", 
-                    "QC 검수를 위해서는 먼저 파일을 로드해야 합니다.\n\n"
-                    "📁 파일 > 폴더 열기를 통해 DB 파일들을 업로드해주세요.\n"
-                    "지원 형식: .txt, .csv, .db 파일"
-                )
-                return
+            uploaded_files = getattr(self, 'uploaded_files', {})
             
-            # 파일 선택 대화상자 생성
-            file_selection_window = tk.Toplevel(self.window)
-            file_selection_window.title("🔍 QC 검수 파일 선택")
-            file_selection_window.geometry("600x500")
-            file_selection_window.transient(self.window)
-            file_selection_window.grab_set()
-            file_selection_window.resizable(True, True)
-            
-            # 메인 프레임
-            main_frame = ttk.Frame(file_selection_window)
-            main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-            
-            # 상단 정보 프레임
-            info_frame = ttk.Frame(main_frame)
-            info_frame.pack(fill=tk.X, pady=(0, 10))
-            
-            # 제목 및 설명
-            title_label = ttk.Label(
-                info_frame, 
-                text="QC 검수 파일 선택", 
-                font=('Arial', 12, 'bold')
-            )
-            title_label.pack(anchor='w')
-            
-            desc_label = ttk.Label(
-                info_frame, 
-                text=f"업로드된 {len(self.uploaded_files)}개 파일 중에서 QC 검수를 수행할 파일을 선택하세요 (최대 6개)",
-                font=('Arial', 9),
-                foreground='gray'
-            )
-            desc_label.pack(anchor='w', pady=(2, 0))
-            
-            # 파일 목록 프레임 (스크롤 가능)
-            files_frame = ttk.LabelFrame(main_frame, text="📄 파일 목록", padding=10)
-            files_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-            
-            # 스크롤바가 있는 캔버스
-            canvas = tk.Canvas(files_frame, bg='white')
-            scrollbar = ttk.Scrollbar(files_frame, orient="vertical", command=canvas.yview)
-            scrollable_frame = ttk.Frame(canvas)
-            
-            scrollable_frame.bind(
-                "<Configure>",
-                lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            # 파일 선택 다이얼로그 표시
+            selected_files = QCFileSelector.create_file_selection_dialog(
+                self.window, uploaded_files, max_files=6
             )
             
-            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-            canvas.configure(yscrollcommand=scrollbar.set)
-            
-            # 체크박스 변수들
-            self.qc_file_vars = {}
-            
-            # 업로드된 파일들에 대한 체크박스 생성
-            for i, (filename, filepath) in enumerate(self.uploaded_files.items()):
-                var = tk.BooleanVar()
-                self.qc_file_vars[filename] = var
-                
-                # 파일 정보 프레임
-                file_frame = ttk.Frame(scrollable_frame)
-                file_frame.pack(fill=tk.X, pady=2, padx=5)
-                
-                # 체크박스
-                checkbox = ttk.Checkbutton(
-                    file_frame, 
-                    text="", 
-                    variable=var
-                )
-                checkbox.pack(side=tk.LEFT, padx=(0, 10))
-                
-                # 파일 정보 레이블
-                file_info_frame = ttk.Frame(file_frame)
-                file_info_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                
-                # 파일명 (굵게)
-                filename_label = ttk.Label(
-                    file_info_frame, 
-                    text=filename,
-                    font=('Arial', 9, 'bold')
-                )
-                filename_label.pack(anchor='w')
-                
-                # 파일 경로 (작게)
-                try:
-                    import os
-                    file_size = os.path.getsize(filepath)
-                    file_size_str = f"{file_size:,} bytes"
-                    
-                    path_label = ttk.Label(
-                        file_info_frame,
-                        text=f"📁 {filepath} ({file_size_str})",
-                        font=('Arial', 8),
-                        foreground='gray'
-                    )
-                    path_label.pack(anchor='w')
-                except:
-                    path_label = ttk.Label(
-                        file_info_frame,
-                        text=f"📁 {filepath}",
-                        font=('Arial', 8),
-                        foreground='gray'
-                    )
-                    path_label.pack(anchor='w')
-            
-            canvas.pack(side="left", fill="both", expand=True)
-            scrollbar.pack(side="right", fill="y")
-            
-            # 하단 버튼 프레임
-            button_frame = ttk.Frame(main_frame)
-            button_frame.pack(fill=tk.X, pady=(0, 0))
-            
-            # 선택 통계 라벨
-            selection_stats_label = ttk.Label(
-                button_frame, 
-                text="선택된 파일: 0개",
-                font=('Arial', 9),
-                foreground='blue'
-            )
-            selection_stats_label.pack(side=tk.LEFT)
-            
-            def update_selection_stats():
-                """선택 통계 업데이트"""
-                selected_count = sum(1 for var in self.qc_file_vars.values() if var.get())
-                selection_stats_label.config(
-                    text=f"선택된 파일: {selected_count}개",
-                    foreground='blue' if selected_count <= 6 else 'red'
-                )
-            
-            # 체크박스 변경 시 통계 업데이트
-            for var in self.qc_file_vars.values():
-                var.trace('w', lambda *args: update_selection_stats())
-            
-            def apply_selection():
-                selected_files = []
-                for filename, var in self.qc_file_vars.items():
-                    if var.get():
-                        selected_files.append(filename)
-                
-                if not selected_files:
-                    messagebox.showwarning("선택 필요", "최소 1개의 파일을 선택해주세요.")
-                    return
-                
-                if len(selected_files) > 6:
-                    messagebox.showwarning(
-                        "선택 제한", 
-                        f"최대 6개의 파일만 선택할 수 있습니다.\n현재 선택: {len(selected_files)}개"
-                    )
-                    return
-                
-                # 선택된 파일 정보 저장
-                self.selected_qc_files = {name: self.uploaded_files[name] for name in selected_files}
-                
-                # 성공 메시지와 함께 선택된 파일 목록 표시
-                file_list = '\n'.join([f"• {name}" for name in selected_files])
+            if selected_files:
+                self.selected_qc_files = selected_files
+                file_list = '\n'.join([f"• {name}" for name in selected_files.keys()])
                 messagebox.showinfo(
                     "파일 선택 완료", 
                     f"QC 검수용으로 {len(selected_files)}개 파일이 선택되었습니다.\n\n"
                     f"선택된 파일:\n{file_list}\n\n"
-                    f"이제 '🚀 QC 검수 실행' 버튼을 클릭하여 검수를 시작하세요."
+                    f"이제 '🔍 QC 검수 실행' 버튼을 클릭하여 검수를 시작하세요."
                 )
-                
-                # 로그 업데이트
                 self.update_log(f"[파일 선택] QC 검수 대상 파일 {len(selected_files)}개 선택 완료")
-                
-                file_selection_window.destroy()
-            
-            def select_all():
-                for var in self.qc_file_vars.values():
-                    var.set(True)
-                update_selection_stats()
-            
-            def deselect_all():
-                for var in self.qc_file_vars.values():
-                    var.set(False)
-                update_selection_stats()
-            
-            def select_first_n(n):
-                """처음 n개 파일 선택"""
-                deselect_all()
-                for i, var in enumerate(self.qc_file_vars.values()):
-                    if i < n:
-                        var.set(True)
-                    else:
-                        break
-                update_selection_stats()
-            
-            # 버튼들
-            button_control_frame = ttk.Frame(button_frame)
-            button_control_frame.pack(side=tk.RIGHT)
-            
-            ttk.Button(button_control_frame, text="처음 3개", command=lambda: select_first_n(3)).pack(side=tk.LEFT, padx=2)
-            ttk.Button(button_control_frame, text="전체 선택", command=select_all).pack(side=tk.LEFT, padx=2)
-            ttk.Button(button_control_frame, text="전체 해제", command=deselect_all).pack(side=tk.LEFT, padx=2)
-            ttk.Button(button_control_frame, text="취소", command=file_selection_window.destroy).pack(side=tk.LEFT, padx=2)
-            ttk.Button(button_control_frame, text="✅ 선택 완료", command=apply_selection).pack(side=tk.LEFT, padx=2)
-            
-            # 초기 통계 업데이트
-            update_selection_stats()
             
         except Exception as e:
             error_msg = f"파일 선택 중 오류 발생: {str(e)}"
@@ -731,19 +646,37 @@ def add_enhanced_qc_functions_to_class(cls):
             return
 
         # Check list 모드인지 확인
-        is_checklist_mode = qc_mode and qc_mode.get() == "⭐ Check list 중점"
+        is_checklist_mode = qc_mode and qc_mode.get() == "checklist"
         
-        # Check list 모드일 때 파일 선택이 필요
-        if is_checklist_mode:
-            if not hasattr(self, 'selected_qc_files') or not self.selected_qc_files:
-                messagebox.showinfo(
-                    "파일 선택 필요", 
-                    "Check list 중점 모드에서는 검수할 파일을 먼저 선택해야 합니다.\n\n"
-                    "'📁 파일 선택' 버튼을 클릭하여 파일을 선택해주세요."
-                )
-                return
+        # Check list 모드 요구사항 검증
+        selected_files = getattr(self, 'selected_qc_files', {})
+        from .qc_utils import QCDataProcessor
+        
+        validation_result, error_msg = QCDataProcessor.validate_checklist_mode_requirements(
+            is_checklist_mode, selected_files
+        )
+        
+        if not validation_result:
+            messagebox.showwarning("검수 요구사항 미충족", error_msg)
+            self.qc_status_label.config(text="❗ 요구사항 미충족", foreground='red')
+            return
 
         try:
+            # 메모리 사용량 체크
+            try:
+                import psutil
+                memory_percent = psutil.virtual_memory().percent
+                if memory_percent > 85:
+                    if not messagebox.askyesno(
+                        "메모리 사용량 높음", 
+                        f"현재 시스템 메모리 사용률이 {memory_percent:.1f}%입니다.\n"
+                        "QC 검수 중 메모리 부족이 발생할 수 있습니다.\n"
+                        "계속하시겠습니까?"
+                    ):
+                        return
+            except ImportError:
+                pass  # psutil이 없어도 계속 진행
+            
             # 로딩 대화상자 표시
             loading_dialog = LoadingDialog(self.window)
             self.window.update_idletasks()
@@ -770,8 +703,7 @@ def add_enhanced_qc_functions_to_class(cls):
                 messagebox.showwarning("경고", f"장비 유형 '{selected_type}'의 ID를 찾을 수 없습니다.")
                 return
             
-            # Check list 모드 확인
-            is_checklist_mode = qc_mode.get() == "checklist" if qc_mode else False
+            # Check list 모드는 앞에서 이미 설정됨 - 중복 설정 제거
             
             # DB 스키마 인스턴스를 통해 데이터 로드
             if hasattr(self, 'db_schema') and self.db_schema:
@@ -793,11 +725,18 @@ def add_enhanced_qc_functions_to_class(cls):
             loading_dialog.update_progress(30, "데이터 분석 중...")
             self.qc_progress.config(value=30)
             
-            df = pd.DataFrame(data, columns=[
-                "id", "parameter_name", "default_value", "min_spec", "max_spec", "type_name",
-                "occurrence_count", "total_files", "confidence_score", "source_files", "description",
-                "module_name", "part_name", "item_type", "is_checklist"
-            ])
+            # 안전한 데이터프레임 생성
+            from .qc_utils import QCDataProcessor, QC_COLUMN_MAPPINGS
+            
+            df, df_error = QCDataProcessor.create_safe_dataframe(data, QC_COLUMN_MAPPINGS['DEFAULT_DB_COLUMNS'])
+            
+            if df is None:
+                loading_dialog.close()
+                messagebox.showerror("데이터 처리 오류", df_error)
+                self.update_log(f"❌ DataFrame 생성 오류: {df_error}")
+                return
+            
+            self.update_log(f"[DEBUG] 로드된 데이터: {len(df)}행, 컬럼: {list(df.columns)}")
 
             # 향상된 QC 검사 실행
             loading_dialog.update_progress(50, "향상된 QC 검사 실행 중...")
@@ -805,49 +744,76 @@ def add_enhanced_qc_functions_to_class(cls):
             
             # Check list 모드일 때 파일 데이터 준비
             file_df = None
-            if is_checklist_mode and hasattr(self, 'selected_qc_files'):
-                # 첫 번째 선택된 파일 사용 (여러 파일 중 첫 번째)
-                first_file = next(iter(self.selected_qc_files.keys()))
-                file_data = self.selected_qc_files[first_file]
-                
-                if isinstance(file_data, pd.DataFrame):
-                    file_df = file_data
+            if is_checklist_mode:
+                file_df, file_error = QCDataProcessor.extract_file_data(selected_files)
+                if file_df is None:
+                    self.update_log(f"[DEBUG] 파일 데이터 추출 실패: {file_error}")
                 else:
-                    # 파일 경로인 경우 로드
-                    try:
-                        file_df = pd.read_csv(file_data, sep='\t' if file_data.endswith('.txt') else ',')
-                    except:
-                        # 로드 실패 시 업로드된 파일 데이터 사용
-                        if hasattr(self, 'uploaded_files'):
-                            file_df = self.uploaded_files.get(first_file)
+                    self.update_log(f"[DEBUG] 파일 데이터 준비 완료: {len(file_df)}행, 컬럼: {list(file_df.columns)}")
             
-            results = EnhancedQCValidator.run_enhanced_checks(
-                df, selected_type, 
-                is_checklist_mode=is_checklist_mode, 
-                file_df=file_df
-            )
+            # QC 검사 실행
+            try:
+                self.update_log(f"[DEBUG] QC 검사 시작 - Check list 모드: {is_checklist_mode}, 파일 데이터: {'있음' if file_df is not None else '없음'}")
+                
+                results = EnhancedQCValidator.run_enhanced_checks(
+                    df, selected_type, 
+                    is_checklist_mode=is_checklist_mode, 
+                    file_df=file_df
+                )
+                
+                self.update_log(f"[DEBUG] QC 검사 완료 - 결과: {len(results)}개")
+                
+            except Exception as qc_error:
+                loading_dialog.close()
+                error_msg = f"QC 검사 실행 오류: {str(qc_error)}"
+                messagebox.showerror("QC 검사 오류", error_msg)
+                self.update_log(f"❌ QC 검사 오류: {error_msg}")
+                return
 
-            # 결과 트리뷰에 표시
+            # 결과 트리뷰에 표시 (대량 데이터 처리 개선)
             loading_dialog.update_progress(75, "결과 업데이트 중...")
             self.qc_progress.config(value=75)
             
-            for result in results:
-                # Pass/Fail에 따른 색상 태그 설정
-                pass_fail = result.get("pass_fail", "CHECK")
-                severity = result.get("severity", "낮음")
-                tag = f"status_{pass_fail.lower()}"
-                
-                self.qc_result_tree.insert(
-                    "", "end", 
-                    values=(
-                        result.get("parameter", ""),
-                        result.get("default_value", "N/A"),
-                        result.get("file_value", "N/A"),
-                        pass_fail,
-                        result.get("issue_type", ""),
-                        result.get("description", "")
-                    ),
-                    tags=(tag,)
+            # 대량 데이터인 경우 배치 처리
+            batch_size = 50  # 한 번에 50개씩 처리
+            total_results = len(results)
+            
+            try:
+                for i in range(0, total_results, batch_size):
+                    batch = results[i:i+batch_size]
+                    
+                    for result in batch:
+                        # Pass/Fail에 따른 색상 태그 설정
+                        pass_fail = result.get("pass_fail", "CHECK")
+                        tag = f"status_{pass_fail.lower()}"
+                        
+                        self.qc_result_tree.insert(
+                            "", "end", 
+                            values=(
+                                result.get("parameter", ""),
+                                result.get("default_value", "N/A"),
+                                result.get("file_value", "N/A"),
+                                pass_fail,
+                                result.get("issue_type", ""),
+                                result.get("description", "")
+                            ),
+                            tags=(tag,)
+                        )
+                    
+                    # 배치 처리 후 UI 업데이트
+                    if total_results > batch_size:
+                        self.window.update_idletasks()
+                        progress = 75 + (i / total_results) * 15  # 75~90% 사이
+                        self.qc_progress.config(value=progress)
+                        
+            except Exception as display_error:
+                # 표시 중 오류 발생 시에도 일부 결과는 보여줌
+                self.update_log(f"[WARNING] 일부 결과 표시 중 오류: {display_error}")
+                messagebox.showwarning(
+                    "표시 경고", 
+                    f"일부 결과 표시 중 오류가 발생했습니다.\n"
+                    f"표시된 결과: {len(self.qc_result_tree.get_children())}개\n"
+                    f"전체 결과: {total_results}개"
                 )
 
             # 트리뷰 태그 색상 설정 - Pass/Fail 기준
@@ -889,22 +855,13 @@ def add_enhanced_qc_functions_to_class(cls):
             self.qc_progress.config(value=0)
 
     def export_qc_results_simple(self):
-        """간단한 QC 결과 Excel 내보내기"""
+        """간단한 QC 결과 내보내기 - 공통 유틸리티 사용"""
         try:
-            # 검수 결과가 있는지 확인
+            from .qc_utils import QCResultExporter
+            
+            # 결과가 있는지 확인
             if not self.qc_result_tree.get_children():
-                messagebox.showwarning("알림", "먼저 QC 검수를 실행해주세요.")
-                return
-            
-            # 파일 저장 대화상자
-            from tkinter import filedialog
-            file_path = filedialog.asksaveasfilename(
-                title="QC 검수 결과 저장",
-                defaultextension=".xlsx",
-                filetypes=[("Excel 파일", "*.xlsx"), ("CSV 파일", "*.csv")]
-            )
-            
-            if not file_path:
+                messagebox.showinfo("알림", "내보낼 QC 결과가 없습니다.")
                 return
             
             # 트리뷰에서 결과 데이터 수집
@@ -912,35 +869,23 @@ def add_enhanced_qc_functions_to_class(cls):
             for item in self.qc_result_tree.get_children():
                 values = self.qc_result_tree.item(item)['values']
                 results.append({
-                    'parameter': values[0],
-                    'issue_type': values[1],
-                    'description': values[2],
-                    'severity': values[3],
-                    'category': values[4],
-                    'recommendation': values[5]
+                    'parameter': values[0],        # itemname
+                    'default_value': values[1],    # default_value
+                    'file_value': values[2],       # file_value
+                    'pass_fail': values[3],        # pass_fail
+                    'issue_type': values[4],       # issue_type
+                    'description': values[5],      # description
+                    'severity': 'N/A',             # 트리뷰에는 없지만 내보내기용
+                    'recommendation': 'N/A'        # 트리뷰에는 없지만 내보내기용
                 })
             
-            # 간단한 보고서 생성
-            from .qc_reports import export_qc_results_to_excel, export_qc_results_to_csv
-            
-            equipment_name = getattr(self, 'qc_type_var', tk.StringVar()).get() or "Unknown"
-            equipment_type = equipment_name
-            
-            success = False
-            if file_path.endswith('.xlsx'):
-                success = export_qc_results_to_excel(results, equipment_name, equipment_type, file_path)
-            elif file_path.endswith('.csv'):
-                success = export_qc_results_to_csv(results, equipment_name, equipment_type, file_path)
-            
-            if success:
-                messagebox.showinfo("성공", f"QC 검수 결과가 저장되었습니다.\n{file_path}")
-                self.update_log(f"[QC] 검수 결과를 '{file_path}'에 저장했습니다.")
-            else:
-                messagebox.showerror("오류", "결과 내보내기에 실패했습니다.")
+            # 공통 내보내기 함수 사용
+            if QCResultExporter.export_results_to_file(results, "qc_enhanced_results"):
+                self.update_log(f"[QC] Enhanced QC 검수 결과 내보내기 완료")
             
         except Exception as e:
-            error_msg = f"결과 내보내기 중 오류: {str(e)}"
-            messagebox.showerror("오류", error_msg)
+            from .qc_utils import QCErrorHandler
+            error_msg = QCErrorHandler.handle_file_error(e, "QC 검수 결과")
             self.update_log(f"❌ {error_msg}")
 
     def show_enhanced_qc_statistics(self, results, is_checklist_mode=False):
