@@ -126,7 +126,6 @@ class TabManager:
         if self.manager.maint_mode:
             self.create_qc_check_tab()
             self.create_default_db_tab()
-            self.create_change_history_tab()
     
     def create_qc_check_tab(self):
         """QC 검수 탭을 생성합니다."""
@@ -146,11 +145,3 @@ class TabManager:
         self.manager.main_notebook.add(default_db_tab, text="Default DB 관리")
         self.manager.default_db_frame = default_db_tab
     
-    def create_change_history_tab(self):
-        """변경 이력 탭을 생성합니다."""
-        if hasattr(self.manager, 'change_history_frame') and self.manager.change_history_frame:
-            return
-        
-        history_tab = ttk.Frame(self.manager.main_notebook)
-        self.manager.main_notebook.add(history_tab, text="변경 이력 관리")
-        self.manager.change_history_frame = history_tab

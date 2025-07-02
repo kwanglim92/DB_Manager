@@ -9,7 +9,6 @@ from app.loading import LoadingDialog
 from app.qc import add_qc_check_functions_to_class
 from app.enhanced_qc import add_enhanced_qc_functions_to_class
 # Default DB 기능 제거됨 - 리팩토링으로 중복 코드 정리
-from app.history import add_change_history_functions_to_class
 from app.utils import create_treeview_with_scrollbar, create_label_entry_pair, format_num_value
 from app.data_utils import numeric_sort_key, calculate_string_similarity
 from app.config_manager import ConfigManager
@@ -54,8 +53,7 @@ class DBManager:
         
         # QC 엔지니어용 탭 프레임들을 저장할 변수들
         self.qc_check_frame = None
-        self.default_db_frame = None  
-        self.change_history_frame = None
+        self.default_db_frame = None
         
         try:
             self.db_schema = DBSchema()
@@ -68,7 +66,6 @@ class DBManager:
         add_qc_check_functions_to_class(DBManager)
         add_enhanced_qc_functions_to_class(DBManager)
         # Default DB 기능 제거됨 - 리팩토링 완료
-        add_change_history_functions_to_class(DBManager)
         
         # 서비스 레이어 초기화 (DB 스키마 초기화 후)
         self._setup_service_layer()
@@ -613,10 +610,6 @@ class DBManager:
             # Default DB 관리 탭 생성 (동기적 실행)
             self.update_log("🔧 Default DB 관리 탭 생성 중...")
             self.create_default_db_tab()
-            
-            # 변경 이력 관리 탭 생성
-            self.update_log("📊 변경 이력 관리 탭 생성 중...")
-            self.create_change_history_tab()
             
             # 상태 업데이트
             self.update_log("✅ QC 엔지니어 모드가 활성화되었습니다.")
@@ -1737,7 +1730,6 @@ class DBManager:
                 type_id = self.db_schema.add_equipment_type(type_name, f"다중 모델 비교를 통해 자동 생성된 장비 유형")
                 self.update_log(f"새 장비 유형 생성: {type_name} (ID: {type_id})")
                 
-                # 변경 이력 기록
                 self.db_schema.log_change_history(
                     "add", "equipment_type", type_name, "", 
                     f"multi-model comparison based", "admin"
@@ -1772,7 +1764,6 @@ class DBManager:
                     added_count = self.add_parameters_simple(type_id, selected_items)
                     result_msg = f"📋 단순 추가 완료:\n\n총 {added_count}개의 항목이 Default DB에 추가되었습니다."
                 
-                # 종합 변경 이력 기록
                 total_changes = added_count + (updated_count if analyze_var.get() else 0)
                 self.db_schema.log_change_history(
                     "bulk_add", "parameter", f"{type_name}_bulk_operation", 
@@ -2057,7 +2048,6 @@ class DBManager:
                     item_type=item_type
                 )
                 
-                # 변경 이력 기록
                 self.db_schema.log_change_history(
                     "add", "parameter", param_name, "", 
                     f"default: {value}, source: {self.file_names[0]}", "admin"
@@ -2308,7 +2298,6 @@ class DBManager:
                         should_remove = False
                         if ("Default DB 관리" in tab_text or 
                             "QC 검수" in tab_text or 
-                            "변경 이력 관리" in tab_text or
                             "검수" in tab_text):
                             should_remove = True
                         
@@ -2330,7 +2319,6 @@ class DBManager:
             # QC 엔지니어용 탭 프레임 참조 완전 제거
             self.qc_check_frame = None
             self.default_db_frame = None
-            self.change_history_frame = None
             
             # QC 관련 추가 참조 제거
             if hasattr(self, 'qc_notebook'):
@@ -3168,7 +3156,6 @@ class DBManager:
                 type_id = self.db_schema.add_equipment_type(name, desc_var.get().strip())
                 self.update_log(f"새 장비 유형 추가: {name} (ID: {type_id})")
                 
-                # 변경 이력 기록
                 self.db_schema.log_change_history("add", "equipment_type", name, "", desc_var.get(), "admin")
                 
                 # 목록 새로고침
@@ -3222,7 +3209,6 @@ class DBManager:
                 if success:
                     self.update_log(f"장비 유형 삭제: {type_name} (파라미터 {param_count}개 포함)")
                     
-                    # 변경 이력 기록
                     self.db_schema.log_change_history("delete", "equipment_type", type_name, 
                                                     f"{param_count} parameters", "", "admin")
                     
@@ -3362,7 +3348,6 @@ class DBManager:
                     item_type=item_type
                 )
 
-                # 변경 이력 기록
                 equipment_type_name = selected_type.split(" (ID:")[0]
                 self.db_schema.log_change_history(
                     "add", "parameter", f"{equipment_type_name}_{name}", 
@@ -3444,7 +3429,6 @@ class DBManager:
                     if success:
                         success_count += 1
                         
-                        # 변경 이력 기록
                         equipment_type_name = self.equipment_type_var.get().split(" (ID:")[0]
                         self.db_schema.log_change_history(
                             "delete", "parameter", f"{equipment_type_name}_{param_names[i]}", 
@@ -3617,7 +3601,6 @@ class DBManager:
                     )
 
                     if success:
-                        # 변경 이력 기록
                         equipment_type_name = self.equipment_type_var.get().split(" (ID:")[0]
                         old_name = param_data.get('parameter_name', '')
                         self.db_schema.log_change_history(
@@ -3894,56 +3877,6 @@ class DBManager:
             messagebox.showerror("❌ 오류", f"텍스트 파일 내보내기 중 오류 발생:\n{str(e)}")
             self.update_log(f"텍스트 파일 내보내기 오류: {str(e)}")
 
-    def create_change_history_tab(self):
-        """변경 이력 관리 탭 생성 - 중복 생성 방지 강화"""
-        try:
-            self.update_log("📊 변경 이력 관리 탭 생성 시작...")
-            
-            # 기존 탭 중복 검사 강화
-            if hasattr(self, 'main_notebook') and self.main_notebook:
-                for tab_id in range(self.main_notebook.index('end')):
-                    try:
-                        tab_text = self.main_notebook.tab(tab_id, 'text')
-                        if "변경 이력 관리" in tab_text or tab_text == "변경 이력 관리":
-                            self.update_log("⚠️ 변경 이력 관리 탭이 이미 존재함 - 기존 탭으로 이동")
-                            self.main_notebook.select(tab_id)
-                            return
-                    except tk.TclError:
-                        continue
-            
-            # 프레임 참조 체크
-            if self.change_history_frame is not None:
-                self.update_log("⚠️ 변경 이력 프레임 참조가 남아있음 - 초기화 후 재생성")
-                self.change_history_frame = None
-                
-            self.change_history_frame = ttk.Frame(self.main_notebook)
-            self.main_notebook.add(self.change_history_frame, text="변경 이력 관리")
-            
-            info_label = ttk.Label(self.change_history_frame, 
-                                  text="변경 이력 관리 기능\n\n파라미터 변경 이력을 추적할 수 있습니다.\nQC 엔지니어 전용 기능입니다.",
-                                  justify="center")
-            info_label.pack(expand=True)
-            
-            # 생성된 탭으로 자동 이동
-            for tab_id in range(self.main_notebook.index('end')):
-                try:
-                    tab_text = self.main_notebook.tab(tab_id, 'text')
-                    if tab_text == "변경 이력 관리":
-                        self.main_notebook.select(tab_id)
-                        break
-                except tk.TclError:
-                    continue
-            
-            self.update_log("✅ 변경 이력 관리 탭 생성 및 활성화 완료")
-            
-        except Exception as e:
-            error_msg = f"변경 이력 탭 생성 중 오류: {str(e)}"
-            self.update_log(f"❌ {error_msg}")
-            print(f"DEBUG - create_change_history_tab error: {e}")
-            import traceback
-            traceback.print_exc()
-            # 실패 시 프레임 참조 정리
-            self.change_history_frame = None
 
     def get_duplicate_analysis(self, selected_items):
         """
@@ -4258,7 +4191,6 @@ class DBManager:
         self.qc_menu = tk.Menu(menubar, tearoff=0)
         self.qc_menu.add_command(label="🔍 QC 검수", command=self.goto_qc_check_tab, state="disabled")
         self.qc_menu.add_command(label="🗄️ Default DB 관리", command=self.goto_default_db_tab, state="disabled")
-        self.qc_menu.add_command(label="📝 변경 이력", command=self.goto_change_history_tab, state="disabled")
         self.qc_menu.add_separator()
         self.qc_menu.add_command(label="📤 데이터 내보내기", command=self.export_qc_data, state="disabled")
         self.qc_menu.add_command(label="📥 데이터 가져오기", command=self.import_qc_data, state="disabled")

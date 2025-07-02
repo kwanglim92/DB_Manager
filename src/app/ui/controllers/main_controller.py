@@ -180,7 +180,6 @@ class MainController(BaseController):
         navigation_menu.add_command(label="📊 DB 비교 탭", command=self._handle_goto_comparison_tab)
         navigation_menu.add_command(label="✅ QC 검수 탭", command=self._handle_goto_qc_tab)
         navigation_menu.add_command(label="🗄️ 설정값 DB 탭", command=self._handle_goto_default_db_tab)
-        navigation_menu.add_command(label="📝 변경 이력 탭", command=self._handle_goto_change_history_tab)
         self.menubar.add_cascade(label="🎯 탐색", menu=navigation_menu)
         
         # ❓ 도움말 메뉴
@@ -646,9 +645,6 @@ class MainController(BaseController):
             if 'default_db' not in self.tab_controllers:
                 self._create_default_db_tab()
             
-            # 변경 이력 탭
-            if 'change_history' not in self.tab_controllers:
-                self._create_change_history_tab()
                 
         except Exception as e:
             print(f"유지보수 탭 표시 오류: {e}")
@@ -659,7 +655,7 @@ class MainController(BaseController):
             # 유지보수 관련 탭들을 메인 노트북에서 제거
             for i in range(self.main_notebook.index("end")):
                 tab_text = self.main_notebook.tab(i, "text")
-                if tab_text in ["QC 검수", "Default DB 관리", "변경 이력"]:
+                if tab_text in ["QC 검수", "Default DB 관리"]:
                     self.main_notebook.forget(i)
                     break
                     
@@ -697,15 +693,6 @@ class MainController(BaseController):
             label = ttk.Label(db_frame, text=f"Default DB 관리 기능 로드 실패: {str(e)}")
             label.pack(expand=True)
     
-    def _create_change_history_tab(self):
-        """변경 이력 탭 생성 (기존 방식 유지)"""
-        # 임시로 기본 프레임만 생성
-        history_frame = ttk.Frame(self.main_notebook)
-        self.main_notebook.add(history_frame, text="변경 이력")
-        
-        # 추후 별도 히스토리 컨트롤러로 분리 예정
-        label = ttk.Label(history_frame, text="변경 이력 기능 (개발 중)")
-        label.pack(expand=True)
     
     # 기존 manager.py 기능과의 호환성 메서드들
     def update_log(self, message: str):
@@ -882,14 +869,6 @@ class MainController(BaseController):
         # 설정값 DB 탭 찾기 및 이동 (향후 구현)
         self.viewmodel.add_log_message("설정값 DB 탭으로 이동")
     
-    def _handle_goto_change_history_tab(self):
-        """변경 이력 탭으로 이동"""
-        if not self.viewmodel.maint_mode:
-            self.show_warning("변경 이력 탭", "QC 모드에서만 접근 가능합니다.")
-            return
-        
-        # 변경 이력 탭 찾기 및 이동 (향후 구현)
-        self.viewmodel.add_log_message("변경 이력 탭으로 이동")
     
     def _update_menu_state(self):
         """메뉴 상태 업데이트 (사용자 모드에 따라)"""

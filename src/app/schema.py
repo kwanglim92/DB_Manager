@@ -73,19 +73,6 @@ class DBSchema:
             )
             ''')
             
-            # 변경 이력 테이블
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS Change_History (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                change_type TEXT NOT NULL,
-                item_type TEXT NOT NULL,
-                item_name TEXT NOT NULL,
-                old_value TEXT,
-                new_value TEXT,
-                username TEXT,
-                changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            ''')
             
             conn.commit()
             
@@ -268,35 +255,6 @@ class DBSchema:
             conn.commit()
             return cursor.rowcount > 0
 
-    # ==================== 변경 이력 관리 ====================
-    
-    def add_change_history(self, change_type, item_type, item_name, 
-                          old_value=None, new_value=None, username=None, conn_override=None):
-        """변경 이력 추가"""
-        with self.get_connection(conn_override) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-            INSERT INTO Change_History (change_type, item_type, item_name, old_value, new_value, username)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ''', (change_type, item_type, item_name, old_value, new_value, username))
-            conn.commit()
-            return cursor.lastrowid
-
-    def get_change_history(self, limit=100, offset=0, conn_override=None):
-        """변경 이력 조회"""
-        with self.get_connection(conn_override) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-            SELECT change_type, item_type, item_name, old_value, new_value, username, changed_at
-            FROM Change_History
-            ORDER BY changed_at DESC
-            LIMIT ? OFFSET ?
-            ''', (limit, offset))
-            return cursor.fetchall()
-
-    def log_change_history(self, change_type, item_type, item_name, old_value="", new_value="", changed_by=""):
-        """변경 이력을 기록합니다 (호환성을 위한 래퍼 메서드)"""
-        return self.add_change_history(change_type, item_type, item_name, old_value, new_value, changed_by)
 
     def get_parameter_by_id(self, parameter_id, conn_override=None):
         """특정 ID의 파라미터 정보를 반환합니다"""

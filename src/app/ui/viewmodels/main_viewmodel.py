@@ -62,7 +62,6 @@ class MainViewModel(BaseViewModel):
         self.set_property('qc_results', ObservableList(), notify=False)
         self.set_property('equipment_types', ObservableList(), notify=False)
         self.set_property('default_db_values', ObservableList(), notify=False)
-        self.set_property('change_history', ObservableList(), notify=False)
         
         # 🎯 통계 및 분석 관련
         self.set_property('statistics_data', ObservableDict(), notify=False)
@@ -140,11 +139,6 @@ class MainViewModel(BaseViewModel):
                             self._can_export_statistics)
         self.register_command('refresh_all_data', self._refresh_all_data_execute)
         
-        # 🎯 변경 이력 관련 명령들
-        self.register_command('load_change_history', self._load_change_history_execute,
-                            self._can_access_change_history)
-        self.register_command('export_change_history', self._export_change_history_execute,
-                            self._can_access_change_history)
     
     # 속성 접근자들
     @property
@@ -273,10 +267,6 @@ class MainViewModel(BaseViewModel):
         """설정값 DB 목록"""
         return self.get_property('default_db_values', ObservableList())
     
-    @property
-    def change_history(self) -> ObservableList:
-        """변경 이력"""
-        return self.get_property('change_history', ObservableList())
     
     # 🎯 통계 및 분석 관련 속성 접근자들
     @property
@@ -501,7 +491,7 @@ class MainViewModel(BaseViewModel):
             "• 폴더 열기: 파일 > 폴더 열기 (Ctrl+O)\n"
             "• DB 비교: 여러 DB 파일을 불러와 값 차이, 격자 뷰, 보고서 등 다양한 탭에서 확인\n"
             "• 유지보수 모드: 도구 > Maintenance Mode (비밀번호 필요)\n"
-            "• Default DB 관리, QC 검수, 변경 이력 등은 유지보수 모드에서만 사용 가능\n"
+            "• Default DB 관리, QC 검수 등은 유지보수 모드에서만 사용 가능\n"
             "• 각 탭에서 우클릭 및 버튼으로 항목 추가/삭제/내보내기 등 다양한 작업 지원\n"
             "• 문의: github.com/kwanglim92/DB_Manager\n"
         )
@@ -779,7 +769,6 @@ class MainViewModel(BaseViewModel):
             if self.maint_mode:
                 self._load_equipment_types_execute()
                 self._load_default_db_values_execute()
-                self._load_change_history_execute()
             
             self.add_log_message("전체 데이터 새로고침 완료")
             return True
@@ -787,33 +776,3 @@ class MainViewModel(BaseViewModel):
             self.error_message = f"전체 데이터 새로고침 실패: {str(e)}"
             return False
     
-    # 변경 이력 관련 명령 실행 메서드들
-    def _load_change_history_execute(self) -> bool:
-        """변경 이력 로드"""
-        try:
-            if not self.maint_mode:
-                self.error_message = "QC 모드에서만 사용 가능합니다."
-                return False
-            
-            self.add_log_message("변경 이력 로드")
-            return True
-        except Exception as e:
-            self.error_message = f"변경 이력 로드 실패: {str(e)}"
-            return False
-    
-    def _export_change_history_execute(self, export_path: str) -> bool:
-        """변경 이력 내보내기"""
-        try:
-            if not self.maint_mode:
-                self.error_message = "QC 모드에서만 사용 가능합니다."
-                return False
-            
-            self.add_log_message(f"변경 이력 내보내기: {export_path}")
-            return True
-        except Exception as e:
-            self.error_message = f"변경 이력 내보내기 실패: {str(e)}"
-            return False
-    
-    def _can_access_change_history(self) -> bool:
-        """변경 이력 접근 가능 여부"""
-        return self.maint_mode
