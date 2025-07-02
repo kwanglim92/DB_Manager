@@ -57,27 +57,45 @@ class QCTabController(TabController):
     
     def _setup_bindings(self):
         """ViewModel 바인딩 설정"""
-        super()._setup_bindings()
-        
-        # QC 결과 바인딩
-        qc_results = self.viewmodel.qc_results
-        qc_results.bind_changed(self._update_qc_results_display)
-        
-        # 장비 유형 바인딩
-        equipment_types = self.viewmodel.equipment_types
-        equipment_types.bind_changed(self._update_equipment_types)
-        
-        # 선택된 장비 유형 바인딩
-        self.bind_property_to_view('selected_equipment_type_id', self._update_selected_equipment)
+        try:
+            super()._setup_bindings()
+            
+            # QC 결과 바인딩 (안전하게 처리)
+            if hasattr(self.viewmodel, 'qc_results'):
+                qc_results = self.viewmodel.qc_results
+                if hasattr(qc_results, 'bind_changed'):
+                    qc_results.bind_changed(self._update_qc_results_display)
+            
+            # 장비 유형 바인딩 (안전하게 처리)
+            if hasattr(self.viewmodel, 'equipment_types'):
+                equipment_types = self.viewmodel.equipment_types
+                if hasattr(equipment_types, 'bind_changed'):
+                    equipment_types.bind_changed(self._update_equipment_types)
+            
+            # 선택된 장비 유형 바인딩 (안전하게 처리)
+            try:
+                self.bind_property_to_view('selected_equipment_type_id', self._update_selected_equipment)
+            except:
+                pass  # 바인딩 실패 시 무시
+                
+        except Exception as e:
+            # 바인딩 실패 시에도 계속 진행
+            print(f"바인딩 설정 중 오류 (무시): {e}")
     
     def _setup_view_events(self):
         """View 이벤트 설정"""
-        super()._setup_view_events()
+        try:
+            super()._setup_view_events()
+        except:
+            pass  # 상위 클래스 이벤트 설정 실패 시 무시
         
-        # 키보드 단축키
-        self.tab_frame.bind('<F5>', self._handle_run_qc_check)
-        self.tab_frame.bind('<Control-s>', self._handle_save_results)
-        self.tab_frame.bind('<Control-e>', self._handle_export_results)
+        # 키보드 단축키 (안전하게 처리)
+        try:
+            self.tab_frame.bind('<F5>', self._handle_run_qc_check)
+            self.tab_frame.bind('<Control-s>', self._handle_save_results)
+            self.tab_frame.bind('<Control-e>', self._handle_export_results)
+        except Exception as e:
+            print(f"키보드 단축키 설정 실패 (무시): {e}")
     
     def _create_tab_ui(self):
         """탭 UI 생성"""
@@ -917,3 +935,99 @@ class QCTabController(TabController):
                     result.get('description', ''),
                     result.get('severity', '')
                 ])
+
+    def _handle_save_results(self, event=None):
+        """QC 결과 저장 (단축키용)"""
+        self._on_save_pdf()
+
+    def _handle_export_results(self, event=None):
+        """QC 결과 내보내기 (단축키용)"""
+        if hasattr(self, 'export_btn') and self.export_btn['state'] != 'disabled':
+            self._on_save_pdf()
+        else:
+            messagebox.showinfo("알림", "먼저 QC 검수를 실행해주세요.")
+
+    def _handle_select_files(self):
+        """파일 선택 핸들러"""
+        try:
+            from app.qc_utils import QCFileSelector
+            
+            # 업로드된 파일 목록 확인
+            uploaded_files = getattr(self.viewmodel, 'uploaded_files', {})
+            
+            if not uploaded_files:
+                messagebox.showinfo("파일 없음", "먼저 파일을 업로드해주세요.")
+                return
+            
+            # 파일 선택 다이얼로그
+            selected = QCFileSelector.create_file_selection_dialog(
+                self.tab_frame, uploaded_files, max_files=6
+            )
+            
+            if selected:
+                self.selected_qc_files = selected
+                self._update_status(f"📁 {len(selected)}개 파일이 선택되었습니다.")
+                
+        except Exception as e:
+            messagebox.showerror("오류", f"파일 선택 중 오류: {str(e)}")
+
+    def _refresh_equipment_types(self):
+        """장비 유형 목록 새로고침"""
+        try:
+            if hasattr(self.viewmodel, 'db_schema') and self.viewmodel.db_schema:
+                equipment_types = self.viewmodel.db_schema.get_equipment_types()
+                
+                # 콤보박스 업데이트
+                if hasattr(self, 'equipment_type_combo'):
+                    type_names = [f"{et[1]} (ID: {et[0]})" for et in equipment_types]
+                    self.equipment_type_combo['values'] = type_names
+                    
+                    if type_names:
+                        self.equipment_type_combo.set(type_names[0])
+                        
+                self._update_status(f"📋 장비 유형 {len(equipment_types)}개 로드됨")
+            else:
+                self._update_status("❌ 데이터베이스 연결 실패")
+                
+        except Exception as e:
+            self._update_status(f"❌ 장비 유형 로드 실패: {str(e)}")
+
+    def _on_equipment_type_changed(self, event=None):
+        """장비 유형 변경 이벤트"""
+        try:
+            selected_text = self.equipment_type_var.get()
+            if selected_text and "ID: " in selected_text:
+                # "Type Name (ID: 123)" 형식에서 ID 추출
+                type_id = selected_text.split("ID: ")[1].split(")")[0]
+                self.current_equipment_type = int(type_id)
+                self._update_status(f"🔧 장비 유형 선택: {selected_text}")
+        except Exception as e:
+            print(f"장비 유형 변경 처리 중 오류: {e}")
+
+    def _on_mode_changed(self):
+        """검수 모드 변경 핸들러"""
+        mode = self.qc_mode_var.get()
+        self.qc_mode = mode
+        self._update_status(f"🔍 검수 모드: {mode}")
+
+    def _load_initial_data(self):
+        """초기 데이터 로드"""
+        self._refresh_equipment_types()
+
+    def _update_equipment_types(self, equipment_types):
+        """장비 유형 업데이트 (바인딩용)"""
+        try:
+            if hasattr(self, 'equipment_type_combo'):
+                type_names = [f"{et[1]} (ID: {et[0]})" for et in equipment_types]
+                self.equipment_type_combo['values'] = type_names
+        except Exception as e:
+            print(f"장비 유형 업데이트 실패: {e}")
+
+    def _update_selected_equipment(self, equipment_id):
+        """선택된 장비 업데이트 (바인딩용)"""
+        self.current_equipment_type = equipment_id
+
+    def _update_qc_results_display(self, results):
+        """QC 결과 표시 업데이트 (바인딩용)"""
+        self.qc_results = results
+        self._display_qc_results()
