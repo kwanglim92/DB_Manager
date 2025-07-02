@@ -462,36 +462,41 @@ def add_enhanced_qc_functions_to_class(cls):
     """
     
     def create_enhanced_qc_tab(self):
-        """향상된 QC 검수 탭 생성 - 새로운 QCTabController 사용"""
-        try:
-            # 새로운 QCTabController 사용
-            from app.ui.controllers.tab_controllers.qc_tab_controller import QCTabController
-            
-            # QC 탭 프레임 생성
-            qc_tab = ttk.Frame(self.main_notebook)
-            self.main_notebook.add(qc_tab, text="QC 검수")
-            
-            # QCTabController 인스턴스 생성 및 초기화
-            self.qc_tab_controller = QCTabController(qc_tab, self)
-            
-            # 컨트롤러 참조 저장 (나중에 사용하기 위해)
-            self.qc_check_frame = qc_tab
-            
-            self.update_log("✅ 새로운 QC 탭 컨트롤러로 탭이 생성되었습니다.")
-            return
-            
-        except ImportError as e:
-            self.update_log(f"⚠️ QCTabController 로드 실패, 기존 방식 사용: {e}")
-        except Exception as e:
-            self.update_log(f"❌ QCTabController 생성 실패, 기존 방식 사용: {e}")
+        """향상된 QC 검수 탭 생성 - 새로운 QCTabController만 사용"""
+        # 🚀 강제로 새로운 QCTabController만 사용
+        from app.ui.controllers.tab_controllers.qc_tab_controller import QCTabController
         
-        # 기존 방식으로 폴백
-        self._create_legacy_qc_tab()
+        # QC 탭 프레임 생성
+        qc_tab = ttk.Frame(self.main_notebook)
+        self.main_notebook.add(qc_tab, text="🔍 QC 검수 (리팩토링됨)")
+        
+        # QCTabController 인스턴스 생성 및 초기화
+        self.qc_tab_controller = QCTabController(qc_tab, self)
+        
+        # 컨트롤러 참조 저장 (나중에 사용하기 위해)
+        self.qc_check_frame = qc_tab
+        
+        self.update_log("🎉 새로운 QC 탭 컨트롤러로 탭이 생성되었습니다!")
+        self.update_log("   - 검수 모드 라디오버튼 숨김 처리됨")
+        self.update_log("   - 전체 항목 포함 체크박스 추가됨")
+        self.update_log("   - 최종 보고서 탭 추가됨")
     
     def _create_legacy_qc_tab(self):
-        """기존 방식의 QC 탭 생성 (폴백용)"""
+        """기존 방식의 QC 탭 생성 (비활성화됨)"""
+        # 🚫 기존 방식은 완전히 비활성화됨
         qc_tab = ttk.Frame(self.main_notebook)
-        self.main_notebook.add(qc_tab, text="QC 검수 (기존)")
+        self.main_notebook.add(qc_tab, text="❌ QC 검수 (기존-비활성화)")
+        
+        # 간단한 메시지만 표시
+        message_label = ttk.Label(qc_tab, 
+                                 text="🚫 기존 QC 방식이 비활성화되었습니다.\n\n"
+                                      "새로운 QCTabController를 사용해주세요.",
+                                 font=('Arial', 12),
+                                 justify='center')
+        message_label.pack(expand=True)
+        
+        self.update_log("⚠️ 기존 QC 탭 방식이 비활성화되었습니다.")
+        return  # 여기서 메서드 종료
 
         # 🎨 상단 컨트롤 패널 - 향상된 디자인
         control_panel = ttk.Frame(qc_tab)

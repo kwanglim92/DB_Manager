@@ -2355,7 +2355,7 @@ class DBManager:
             traceback.print_exc()
 
     def create_qc_check_tab(self):
-        """QC 검수 탭 생성 - 완전한 기능 구현 및 중복 생성 방지 강화"""
+        """QC 검수 탭 생성 - 새로운 QCTabController 사용"""
         try:
             # 기존 탭 중복 검사 강화
             if hasattr(self, 'main_notebook') and self.main_notebook:
@@ -2374,11 +2374,22 @@ class DBManager:
                 self.update_log("⚠️ QC 프레임 참조가 남아있음 - 초기화 후 재생성")
                 self.qc_check_frame = None
             
-            self.update_log("📋 QC 검수 탭 생성 시작...")
+            self.update_log("🚀 새로운 QC 탭 컨트롤러로 탭 생성 시작...")
+            
+            # 🚀 새로운 QCTabController 사용
+            from app.ui.controllers.tab_controllers.qc_tab_controller import QCTabController
             
             # QC 검수 탭 프레임 생성
             self.qc_check_frame = ttk.Frame(self.main_notebook)
-            self.main_notebook.add(self.qc_check_frame, text="QC 검수")
+            self.main_notebook.add(self.qc_check_frame, text="🔍 QC 검수 (신규)")
+            
+            # QCTabController 인스턴스 생성
+            self.qc_tab_controller = QCTabController(self.qc_check_frame, self)
+            
+            self.update_log("🎉 새로운 QC 탭 컨트롤러로 탭이 생성되었습니다!")
+            self.update_log("   ✅ 리팩토링된 UI 적용됨")
+            self.update_log("   ✅ 최종 보고서 기능 포함됨")
+            return  # 여기서 메서드 종료 (기존 코드 실행 방지)
             
             # 🆕 src/app/qc.py의 완전한 QC 탭 기능 사용
             # 기존 기본 탭 대신 고급 QC 기능이 포함된 탭 생성
