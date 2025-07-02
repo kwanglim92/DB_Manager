@@ -29,91 +29,6 @@ def show_user_guide(event=None):
     )
     messagebox.showinfo("사용 설명서", guide_text)
 
-def show_change_password_dialog(update_log_callback=None):
-    """
-    유지보수 모드 비밀번호 변경 다이얼로그를 표시합니다.
-    
-    Args:
-        update_log_callback: 로그 업데이트를 위한 콜백 함수
-        
-    Returns:
-        bool: 비밀번호 변경 성공 여부
-    """
-    current_password = simpledialog.askstring("비밀번호 변경", "현재 비밀번호를 입력하세요:", show="*")
-    if current_password is None:
-        return False
-        
-    try:
-        from app.utils import verify_password, change_maintenance_password
-    except ImportError:
-        messagebox.showerror("오류", "비밀번호 관련 기능을 로드할 수 없습니다.")
-        return False
-        
-    if not verify_password(current_password):
-        messagebox.showerror("오류", "현재 비밀번호가 일치하지 않습니다.")
-        return False
-        
-    new_password = simpledialog.askstring("비밀번호 변경", "새 비밀번호를 입력하세요:", show="*")
-    if new_password is None:
-        return False
-        
-    confirm_password = simpledialog.askstring("비밀번호 변경", "새 비밀번호를 다시 입력하세요:", show="*")
-    if confirm_password is None:
-        return False
-        
-    if new_password != confirm_password:
-        messagebox.showerror("오류", "새 비밀번호가 일치하지 않습니다.")
-        return False
-        
-    if change_maintenance_password(current_password, new_password):
-        messagebox.showinfo("성공", "비밀번호가 성공적으로 변경되었습니다.")
-        if update_log_callback:
-            update_log_callback("유지보수 모드 비밀번호가 변경되었습니다.")
-        return True
-    else:
-        messagebox.showerror("오류", "비밀번호 변경에 실패했습니다.")
-        return False
-
-def apply_settings(config, settings, update_log_callback=None):
-    """
-    설정 적용
-    
-    Args:
-        config: 설정 객체
-        settings: 적용할 설정들
-        update_log_callback: 로그 업데이트를 위한 콜백 함수
-        
-    Returns:
-        bool: 설정 적용 성공 여부
-    """
-    if not config:
-        return False
-        
-    # 테마 설정 적용
-    if 'theme' in settings:
-        ui_settings = config.get_setting('ui', {})
-        if not isinstance(ui_settings, dict):
-            ui_settings = {}
-        ui_settings['theme'] = settings['theme']
-        config.set_setting('ui', ui_settings)
-        
-        # 설정 파일 저장
-        try:
-            if config.save_settings():
-                if update_log_callback:
-                    update_log_callback(f"테마가 '{settings['theme']}'로 변경되었습니다.")
-                return True
-            else:
-                if update_log_callback:
-                    update_log_callback("설정 저장에 실패했습니다.")
-                return False
-        except Exception as e:
-            if update_log_callback:
-                update_log_callback(f"설정 저장 중 오류: {e}")
-            return False
-    
-    return True
-
 def setup_service_layer(db_schema, update_log_callback=None):
     """
     새로운 서비스 레이어 초기화
@@ -222,19 +137,11 @@ class ConfigManager:
     def show_about(self):
         """프로그램 정보 다이얼로그 표시"""
         return show_about()
-    
+
     def show_user_guide(self, event=None):
         """사용자 가이드 다이얼로그 표시"""
         return show_user_guide(event)
-    
-    def show_change_password_dialog(self):
-        """비밀번호 변경 다이얼로그 표시"""
-        return show_change_password_dialog(self.update_log_callback)
-    
-    def apply_settings(self, settings):
-        """설정 적용"""
-        return apply_settings(self.config, settings, self.update_log_callback)
-    
+
     def should_use_service(self, service_name):
         """특정 서비스 사용 여부 확인"""
         return should_use_service(service_name, self.service_factory, self.use_new_services)
