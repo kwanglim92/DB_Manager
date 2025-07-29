@@ -116,7 +116,6 @@ class EngineeringIcons:
         'approve': '👍',       # 승인
         'reject': '👎',        # 거부
         'review': '👀',        # 검토
-        'audit': '📋',         # 감사
         'measure': '📏',       # 측정
         'calibrate': '⚖️',     # 교정
         'standard': '📐',      # 표준

@@ -119,7 +119,7 @@ class HelpUIManager:
                 "• 폴더 열기: 파일 > 폴더 열기 (Ctrl+O)\n"
                 "• DB 비교: 여러 DB 파일을 불러와 값 차이, 격자 뷰, 보고서 등 다양한 탭에서 확인\n"
                 "• 유지보수 모드: 도구 > Maintenance Mode (비밀번호 필요)\n"
-                "• Default DB 관리, QC 검수, 변경 이력 등은 유지보수 모드에서만 사용 가능\n"
+                "• Default DB 관리, QC 검수 등은 유지보수 모드에서만 사용 가능\n"
                 "• 각 탭에서 우클릭 및 버튼으로 항목 추가/삭제/내보내기 등 다양한 작업 지원\n"
                 "• 문의: github.com/kwanglim92/DB_Manager\n\n"
                 "= 사용자 역할 =\n"

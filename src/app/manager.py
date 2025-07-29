@@ -708,27 +708,31 @@ class DBManager:
             messagebox.showerror("오류", error_msg)
 
     def perform_qc_check(self):
-        """QC 검수 실행 - Enhanced QC 우선 사용"""
+        """QC 검수 실행 - 통합 QC 시스템 사용"""
         try:
-            self.update_log("🚀 QC 검수 실행 시작...")
+            from app.simplified_qc_system import perform_simplified_qc_check
             
-            # Enhanced QC 기능 사용 시도
-            if hasattr(self, 'perform_enhanced_qc_check'):
-                self.update_log("🔧 Enhanced QC 기능 사용")
-                return self.perform_enhanced_qc_check()
-            elif hasattr(self, 'perform_qc_check_enhanced'):
-                self.update_log("🔧 Enhanced QC 기능 사용 (대체)")
-                return self.perform_qc_check_enhanced()
-            else:
-                # 기본 QC 기능 fallback
-                self.update_log("📋 기본 QC 기능으로 fallback")
-                messagebox.showinfo(
-                    "QC 검수 실행", 
-                    "Enhanced QC 기능을 사용할 수 없어 기본 QC 기능을 사용합니다.\n"
-                    "더 자세한 검수를 위해서는 Enhanced QC 기능을 활성화해주세요."
-                )
-                # 여기에 기본 QC 로직 구현 가능
-                return True
+            self.update_log("🚀 간소화된 QC 검수 시스템 시작...")
+            
+            # 검수 모드 결정
+            mode = "comprehensive"  # 기본값
+            
+            # QC 모드 변수가 있는 경우 확인
+            if hasattr(self, 'qc_mode_var'):
+                qc_mode = self.qc_mode_var.get()
+                if qc_mode == "performance":
+                    mode = "checklist_only"
+            
+            self.update_log(f"🔍 QC 검수 모드: {mode}")
+            
+            # 간소화된 QC 시스템 실행
+            perform_simplified_qc_check(self, mode)
+            
+        except ImportError as e:
+            error_msg = f"QC 시스템을 불러올 수 없습니다: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("시스템 오류", error_msg)
+            return False
                 
         except Exception as e:
             error_msg = f"QC 검수 실행 중 오류: {str(e)}"
@@ -4425,33 +4429,29 @@ class DBManager:
                 conn.close()
 
     def perform_qc_check(self):
-        """QC 검수 실행 - 향상된 기능 지원"""
-        if not self.maint_mode:
-            messagebox.showwarning("접근 제한", "QC 검수는 Maintenance Mode에서만 사용 가능합니다.")
-            return
-        
+        """통합 QC 검수 실행 - 중복 함수 제거됨"""
         try:
-            # Enhanced QC 기능이 있는지 확인
-            if hasattr(self, 'perform_enhanced_qc_check'):
-                self.perform_enhanced_qc_check()
-            elif hasattr(self, 'perform_qc_check_enhanced'):
-                self.perform_qc_check_enhanced()
-            else:
-                # 기본 QC 기능 사용
-                from app.qc import add_qc_check_functions_to_class
-                add_qc_check_functions_to_class(self.__class__)
-                if hasattr(self, 'perform_qc_check'):
-                    # 재귀 호출 방지를 위해 직접 QC 로직 실행
-                    selected_type = getattr(self, 'qc_type_var', tk.StringVar()).get()
-                    if not selected_type:
-                        messagebox.showinfo("알림", "장비 유형을 선택해주세요.")
-                        return
-                    
-                    self.update_log(f"[QC] 기본 QC 검수를 실행합니다: {selected_type}")
-                    # 실제 QC 로직은 qc.py의 perform_qc_check에서 처리
-                else:
-                    messagebox.showwarning("기능 없음", "QC 검수 기능을 사용할 수 없습니다.")
-                    
+            from app.simplified_qc_system import perform_simplified_qc_check
+            
+            # 검수 모드 결정
+            mode = "comprehensive"  # 기본값
+            
+            # QC 모드 변수가 있는 경우 확인
+            if hasattr(self, 'qc_mode_var'):
+                qc_mode = self.qc_mode_var.get()
+                if qc_mode == "performance":
+                    mode = "checklist_only"
+            
+            self.update_log(f"🔍 간소화된 QC 검수 시작 - 모드: {mode}")
+            
+            # 간소화된 QC 시스템 실행
+            perform_simplified_qc_check(self, mode)
+            
+        except ImportError as e:
+            error_msg = f"QC 시스템을 불러올 수 없습니다: {str(e)}"
+            self.update_log(f"❌ {error_msg}")
+            messagebox.showerror("시스템 오류", error_msg)
+            
         except Exception as e:
             error_msg = f"QC 검수 실행 중 오류: {str(e)}"
             self.update_log(f"❌ {error_msg}")
